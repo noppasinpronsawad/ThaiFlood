@@ -1,0 +1,24 @@
+{
+  "name": "thaiflood-forecast",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "predev": "bash scripts/cleanup-process.sh",
+    "dev": "vite --port 3050 --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --port 3050",
+    "cleanup": "bash scripts/cleanup-process.sh",
+    "test:regression": "node tests/regression.test.js",
+    "test:security": "node tests/security.test.js",
+    "test": "npm run test:regression && npm run test:security"
+  },
+  "dependencies": {
+    "@turf/buffer": "^7.4.0",
+    "@turf/helpers": "^7.4.0",
+    "maplibre-gl": "^4.7.1"
+  },
+  "devDependencies": {
+    "vite": "^5.4.10"
+  }
+}

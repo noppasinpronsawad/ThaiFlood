@@ -1,0 +1,110 @@
+================================================================================
+                    รายการ API และแหล่งข้อมูลภายนอก (ThaiFlood Intelligence)
+                                วันที่จัดทำ: 26 กันยายน 2026
+================================================================================
+
+สรุปภาพรวมด้านความปลอดภัยและค่าใช้จ่าย:
+- ทุก API ในระบบเป็น "Open Data / Public Service" ฟรี 100%
+- ไม่มีการใช้งาน Private API Key หรือรหัสผ่านลับในโค้ดฝั่ง Client
+- ทุกลิงก์สื่อสารผ่านโปรโตคอลที่เข้ารหัสความปลอดภัย HTTPS 100%
+- ปลอดภัยต่อการนำโค้ดขึ้น GitHub สาธารณะ (Public Repository) โดยไม่มี Secret รั่วไหล
+
+--------------------------------------------------------------------------------
+1. หมวดโทรมาตรระดับน้ำและข้อมูลเขื่อน (Real-Time Hydrology & Telemetry)
+--------------------------------------------------------------------------------
+1.1 โทรมาตรวัดระดับน้ำสดทั่วประเทศ (1,400+ สถานี)
+    - หน่วยงาน: สถาบันสารสนเทศทรัพยากรน้ำ (องค์การมหาชน) - สสน. (HII)
+    - URL Endpoint: https://api-v3.thaiwater.net/api/v1/thaiwater30/public/waterlevel_load
+    - Method: GET
+    - การใช้งาน: ดึงระดับน้ำสด (ม.รทก.), ระดับตลิ่ง, แนวโน้มน้ำขึ้น-ลง, และอัตราการไหล
+    - การยืนยันตัวตน: ไม่ต้องใช้ API Key (Public Endpoint)
+    - ค่าใช้จ่าย: ฟรี
+    - ข้อแนะนำ Production: แนะนำให้ทำ Edge Caching (ทุก 5-10 นาที) เพื่อป้องกัน Rate Limit
+
+1.2 ข้อมูลสถานการณ์น้ำในเขื่อนและอ่างเก็บน้ำขนาดใหญ่ (35+ เขื่อนหลัก)
+    - หน่วยงาน: สสน. ร่วมกับ การไฟฟ้าฝ่ายผลิตแห่งประเทศไทย (กฟผ.) และ กรมชลประทาน (ชป.)
+    - URL Endpoint: https://api-v3.thaiwater.net/api/v1/thaiwater30/public/dam_load
+    - Method: GET
+    - การใช้งาน: ปริมาตรน้ำกักเก็บจริง, % ความจุ, น้ำไหลเข้า (Inflow), ปริมาณระบาย (Released) นำมาประเมินร่วมกับ Rule Curve (URC / LRC)
+    - การยืนยันตัวตน: ไม่ต้องใช้ API Key
+    - ค่าใช้จ่าย: ฟรี
+
+--------------------------------------------------------------------------------
+2. หมวดสภาพอากาศและแบบจำลองพยากรณ์ฝนเชิงตัวเลข (Weather & NWP Forecast)
+--------------------------------------------------------------------------------
+2.1 ข้อมูลสภาพอากาศรายจังหวัด และพยากรณ์ล่วงหน้า 7 วัน
+    - ผู้ให้บริการ: Open-Meteo Weather API
+    - URL Endpoint: https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lng}&current=temperature_2m,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_direction_10m&hourly=temperature_2m,precipitation_probability,precipitation&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=Asia/Bangkok
+    - Method: GET
+    - การใช้งาน: แสดงสภาพอากาศสดใน Apple Weather Pill, อุณหภูมิ, สภาพฝน, และพยากรณ์ 7 วันใน Place Sheet
+    - การยืนยันตัวตน: ฟรี ไม่ต้องใช้ API Key (Open-Meteo Non-commercial License)
+    - ค่าใช้จ่าย: ฟรี (จำกัด 10,000 calls/วัน)
+
+2.2 แบบจำลองพยากรณ์ฝน GFS & ECMWF (Numerical Weather Prediction)
+    - ผู้ให้บริการ: Open-Meteo NWP Supercomputer API
+    - URL Endpoint: https://api.open-meteo.com/v1/forecast?latitude=13.7&longitude=100.5&hourly=precipitation&models=gfs_seamless,ecmwf_ifs025&timezone=Asia/Bangkok
+    - การใช้งาน: ดึงปริมาณฝนสะสมเชิงพื้นที่ล่วงหน้า 7 วัน สำหรับแบบจำลอง NOAA GFS (13 กม.) และ ECMWF IFS (9 กม.)
+    - การยืนยันตัวตน: ฟรี ไม่ต้องใช้ API Key
+    - ค่าใช้จ่าย: ฟรี
+
+2.3 คาดหมายลักษณะอากาศประเทศไทย
+    - หน่วยงาน: กรมอุตุนิยมวิทยา (TMD)
+    - URL Endpoint: https://data.tmd.go.th/api/WeatherForecastDaily/V2/
+    - การใช้งาน: สำรองข้อมูลและตรวจสอบเกณฑ์การเตือนภัยสภาพอากาศประเทศไทย
+    - การยืนยันตัวตน: Open Data
+    - ค่าใช้จ่าย: ฟรี
+
+--------------------------------------------------------------------------------
+3. หมวดเรดาร์ตรวจฝนสดและภาพถ่ายดาวเทียม (Radar & Satellite Imagery)
+--------------------------------------------------------------------------------
+3.1 เรดาร์ตรวจจับกลุ่มฝนและพายุสด (Doppler Weather Radar)
+    - ผู้ให้บริการ: RainViewer Radar API (เชื่อมโยงเครือข่ายสถานีเรดาร์ กรมอุตุนิยมวิทยา TMD)
+    - URL Endpoint: https://tilecache.rainviewer.com/v2/radar/{timestamp}/512/{z}/{x}/{y}/2/1_1.png
+    - การใช้งาน: เลเยอร์เรดาร์ตรวจจับกลุ่มฝนสด ความละเอียด 512px อัปเดตทุก 10 นาที
+    - การยืนยันตัวตน: ฟรี ไม่ต้องใช้ API Key (Open Tile Cache Tier)
+    - ค่าใช้จ่าย: ฟรี
+
+3.2 ดาวเทียมอุตุนิยมวิทยาตรวจกลุ่มเมฆฝน (Himawari-9 Clean IR)
+    - ผู้ให้บริการ: NASA GIBS (Global Imagery Browse Services) ร่วมกับ JMA (ญี่ปุ่น)
+    - URL Endpoint: https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/Himawari_AHI_Band13_Clean_Infrared/default/{date}/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png
+    - การใช้งาน: ภาพถ่ายดาวเทียมอินฟราเรดตรวจจับยอดเมฆพายุและความเย็นจัด อัปเดตทุก 10 นาที
+    - การยืนยันตัวตน: ฟรี ไม่ต้องใช้ API Key (NASA Earthdata Open Access)
+    - ค่าใช้จ่าย: ฟรี
+
+--------------------------------------------------------------------------------
+4. หมวดธรณีวิทยา แผนที่ฐาน และอาคาร 3D (Geology & Basemaps)
+--------------------------------------------------------------------------------
+4.1 แผนที่ธรณีวิทยาประเทศไทย มาตราส่วน 1:250,000 (หมวดหินและโครงสร้างธรณี)
+    - หน่วยงาน: กรมทรัพยากรธรณี (DMR) - กระทรวงทรัพยากรธรรมชาติและสิ่งแวดล้อม
+    - URL Endpoint:
+      * หน่วยหิน: https://gisportal.dmr.go.th/arcgis/rest/services/GEOLOGY/Geology250K/MapServer
+      * รอยเลื่อนและโครงสร้าง: https://gisportal.dmr.go.th/arcgis/rest/services/GEOLOGY/GeologyStructure250K/MapServer
+    - การใช้งาน: เลเยอร์หน่วยหินฐาน (Rock Units), รอยเลื่อนมีพลัง, และระบบคลิกสืบค้นชนิดหิน
+    - การยืนยันตัวตน: ฟรี ไม่ต้องใช้ API Key (ArcGIS REST Open MapServer)
+    - ค่าใช้จ่าย: ฟรี
+
+4.2 แผนที่ฐาน (Basemaps)
+    - OpenStreetMap Standard: https://a.tile.openstreetmap.org/{z}/{x}/{y}.png
+    - ESRI World Imagery (ภาพถ่ายดาวเทียมความละเอียดสูง): https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{x}/{y}
+    - OpenTopoMap (เส้นชั้นความสูง Contour Lines): https://a.tile.opentopomap.org/{z}/{x}/{y}.png
+    - AWS Terrarium DEM (แบบจำลองความสูงภูมิประเทศ 30m): https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png
+    - OpenFreeMap (เวกเตอร์อาคาร 3 มิติ 3D Buildings): https://tiles.openfreemap.org/planet
+    - การยืนยันตัวตน: ฟรีทั้งหมด
+
+--------------------------------------------------------------------------------
+5. หมวดระบบวิเคราะห์สถิติผู้เข้าชม (Privacy-Friendly Analytics)
+--------------------------------------------------------------------------------
+5.1 GoatCounter Web Analytics
+    - ผู้ให้บริการ: GoatCounter (Open-source privacy analytics)
+    - Tracking Script: https://gc.zgo.at/count.js
+    - Count Endpoint: https://thaiflood.goatcounter.com/count
+    - Public Stats JSON: https://thaiflood.goatcounter.com/counter//.json
+    - การใช้งาน: นับจำนวนผู้เข้าชมเว็บไซต์แบบไม่ใช้คุกกี้ (Cookieless) สอดคล้องตาม PDPA / GDPR
+    - การยืนยันตัวตน: ผูกผ่านชื่อบัญชีโดเมน thaiflood
+    - ค่าใช้จ่าย: ฟรีสำหรับโปรเจกต์สาธารณะและ Open Source
+
+================================================================================
+ข้อสรุปสำคัญสำหรับการขึ้น Production:
+ทุกบริการข้างต้นเป็น Open Endpoint ไม่มี Private Key ใดๆ ใน Source Code
+ท่านสามารถนำโค้ดขึ้น GitHub ได้อย่างปลอดภัย 100% โดยไม่ต้องกังวลเรื่องรหัสผ่านหลุด
+================================================================================
