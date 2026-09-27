@@ -4,6 +4,7 @@
  * - Top-Right: Collapsible Layer Menu Bar (Hide Menu Bar) with Dedicated Toggles
  */
 import { getVisitorCount } from '../services/analyticsService.js';
+import { searchLocalProvinces, searchThaiLocations } from '../services/geocodeService.js';
 
 export function createNavbar(options) {
   const { stations = [], dams = [], bmaRoads = [], onSearchSelect, onLayerToggle, onECMWFDayChange, onGFSDayChange } = options;
@@ -28,7 +29,7 @@ export function createNavbar(options) {
           type="text" 
           class="gmaps-search-input" 
           id="gmaps-search-input" 
-          placeholder="ค้นหาสถานี, ลำน้ำ, หรือเขื่อน (เช่น ภูมิพล, อยุธยา, ป่าสัก...)" 
+          placeholder="ค้นหาจังหวัด, อำเภอ, ตำบล, สถานี, เขื่อน..." 
           autocomplete="off"
         />
         <button class="gmaps-search-btn" id="gmaps-search-submit" title="ค้นหา">
@@ -45,7 +46,12 @@ export function createNavbar(options) {
       <!-- Header / Hide Menu Bar Toggle -->
       <div class="gmaps-layer-header" id="gmaps-layer-header" title="คลิกเพื่อย่อ/ขยายเมนูเลเยอร์">
         <div class="layer-header-title">
-          <span class="layer-header-icon">📑</span>
+          <span class="layer-header-icon" aria-hidden="true">
+            <svg class="layer-icon-svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 3.5L21.5 8.8L12 14.1L2.5 8.8L12 3.5Z" />
+              <path d="M2.5 12.8L12 18.1L21.5 12.8L21.5 15.8L12 21.1L2.5 15.8L2.5 12.8Z" />
+            </svg>
+          </span>
           <span>ชั้นข้อมูลแผนที่</span>
         </div>
         <button class="gmaps-layer-toggle-btn" id="btn-toggle-layer-panel" title="ย่อ / ขยายแถบเมนู (Hide Menu Bar)" type="button">
@@ -342,7 +348,42 @@ export function createNavbar(options) {
                 <span><b>เส้นสีส้ม:</b> เฝ้าระวังน้ำท่วมขังรอระบาย (10 - 20 ซม.)</span>
               </div>
               <div class="legend-note">💡 ข้อมูล <b>สำนักการระบายน้ำ กทม.</b> คลิกบนเส้นถนนเพื่อดูช่วงที่ท่วม ระดับน้ำ และกดแจ้งเหตุผ่าน Traffy Fondue & สายด่วน 1555</div>
-              <div class="legend-timestamp" id="bma-roads-updated-time" style="font-size: 11px; color: #b91c1c; font-weight: 600; margin-top: 5px; display: flex; align-items: center; gap: 4px;">🕒 อัปเดตล่าสุด: 26 ก.ย. 2026 21:00 น. (ศูนย์ควบคุมระบบป้องกันน้ำท่วม สำนักการระบายน้ำ กทม.)</div>
+              <div class="legend-timestamp" id="bma-roads-updated-time" style="font-size: 11px; color: #b91c1c; font-weight: 600; margin-top: 5px; display: flex; align-items: center; gap: 4px;">📍 เกณฑ์เฝ้าระวัง 23 จุดเสี่ยงน้ำท่วมผิวจราจร (สำนักการระบายน้ำ กทม.)</div>
+            </div>
+          </div>
+
+          <!-- 12. Traffy Fondue Road Flood Incidents (Minimalist Road Icon) -->
+          <div class="layer-item-wrapper">
+            <label class="gmaps-toggle-row" for="toggle-traffy-flood">
+              <div class="layer-info">
+                <span class="minimal-road-layer-icon" style="display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px;">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+                    <path d="M6 20L9.5 4H14.5L18 20H6Z" fill="#334155" stroke="#94a3b8" stroke-width="1.2" stroke-linejoin="round"/>
+                    <line x1="12" y1="5" x2="12" y2="8" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"/>
+                    <line x1="12" y1="10.5" x2="12" y2="13.5" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"/>
+                    <line x1="12" y1="16" x2="12" y2="19" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"/>
+                  </svg>
+                </span>
+                <div class="layer-text-wrap">
+                  <div class="layer-name">น้ำท่วมขัง Traffy Fondue (กทม.)</div>
+                  <div class="layer-desc">รายงานจุดน้ำท่วมผิวจราจรสดจากประชาชนและเจ้าหน้าที่</div>
+                </div>
+              </div>
+              <div class="gmaps-switch">
+                <input type="checkbox" id="toggle-traffy-flood" data-layer="traffy-flood" checked />
+                <span class="switch-slider slider-orange"></span>
+              </div>
+            </label>
+            <div class="layer-legend-box" id="legend-traffy-flood" style="display: block;">
+              <div class="legend-row">
+                <span class="legend-color" style="background:#f59e0b; height:8px; width:8px; border-radius:50%; display:inline-block;"></span>
+                <span><b>สีส้ม:</b> รอรับเรื่อง / กำลังดำเนินการแก้ไข</span>
+              </div>
+              <div class="legend-row">
+                <span class="legend-color" style="background:#10b981; height:8px; width:8px; border-radius:50%; display:inline-block;"></span>
+                <span><b>สีเขียว:</b> ดำเนินการเสร็จสิ้น / น้ำลดแล้ว</span>
+              </div>
+              <div class="legend-note">💡 ข้อมูลจากระบบ <b>Traffy Fondue (สวทช. / กทม.)</b> คลิกที่หมุดถนนเพื่อดูภาพถ่ายและรายละเอียด</div>
             </div>
           </div>
 
@@ -604,14 +645,22 @@ export function createNavbar(options) {
   // Search logic
   const searchInput = overlay.querySelector('#gmaps-search-input');
   const dropdown = overlay.querySelector('#gmaps-search-dropdown');
+  let searchAbortController = null;
+  let searchDebounceTimer = null;
+  const recentGeoResults = new Map();
 
-  function handleSearch(query) {
+  async function handleSearch(query) {
     const val = query.trim().toLowerCase();
     if (!val) {
       dropdown.style.display = 'none';
+      if (searchAbortController) searchAbortController.abort();
       return;
     }
 
+    // 1. Instant local matching for 77 Thai provinces
+    const matchedProvinces = searchLocalProvinces(val);
+
+    // 2. Instant matching for dams
     const matchedDams = dams.filter(
       (d) =>
         (d.name && d.name.toLowerCase().includes(val)) ||
@@ -620,6 +669,7 @@ export function createNavbar(options) {
         (d.basin && d.basin.toLowerCase().includes(val))
     );
 
+    // 3. Instant matching for stations
     const matchedStations = stations.filter(
       (s) =>
         (s.code && s.code.toLowerCase().includes(val)) ||
@@ -631,61 +681,149 @@ export function createNavbar(options) {
         (s.basin && s.basin.toLowerCase().includes(val))
     );
 
-    if (matchedDams.length === 0 && matchedStations.length === 0) {
-      dropdown.innerHTML = `<div style="padding: 12px; color: #5f6368; font-size: 13px; text-align: center;">ไม่พบข้อมูลของ "${query}"</div>`;
+    renderSearchResults({
+      query,
+      provinces: matchedProvinces,
+      dams: matchedDams,
+      stations: matchedStations,
+      locations: [],
+      isLoadingLocations: val.length >= 2
+    });
+
+    // 4. Async Geocoding for Districts (อำเภอ/เขต) and Subdistricts (ตำบล/แขวง) via OSM Nominatim
+    if (val.length >= 2) {
+      if (searchAbortController) searchAbortController.abort();
+      searchAbortController = new AbortController();
+
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(async () => {
+        const locations = await searchThaiLocations(query, searchAbortController.signal);
+        locations.forEach((loc) => recentGeoResults.set(loc.id, loc));
+
+        renderSearchResults({
+          query,
+          provinces: matchedProvinces,
+          dams: matchedDams,
+          stations: matchedStations,
+          locations,
+          isLoadingLocations: false
+        });
+      }, 250);
+    }
+  }
+
+  function renderSearchResults({ query, provinces, dams: matchedDams, stations: matchedStations, locations, isLoadingLocations }) {
+    const totalFound = provinces.length + matchedDams.length + matchedStations.length + locations.length;
+
+    if (totalFound === 0 && !isLoadingLocations) {
+      dropdown.innerHTML = `<div style="padding: 14px; color: #5f6368; font-size: 13px; text-align: center;">ไม่พบข้อมูลของ "${query}"</div>`;
       dropdown.style.display = 'block';
       return;
     }
 
     let itemsHtml = '';
 
-    // Render matching dams first
+    // Render Provinces (จังหวัด)
+    if (provinces.length > 0) {
+      itemsHtml += provinces.slice(0, 4).map((p) => `
+        <div class="gmaps-drop-item" data-type="province" data-id="${p.id}">
+          <div style="font-size: 18px; margin-right: 10px;">🏛️</div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-weight: 700; color: #0f172a; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              ${p.fullName}
+            </div>
+            <div style="font-size: 11.5px; color: #5f6368;">ประเทศไทย (พิกัด: ${p.lat.toFixed(2)}, ${p.lng.toFixed(2)})</div>
+          </div>
+          <span style="font-size: 11px; font-weight: 600; color: #4338ca; background: #e0e7ff; padding: 2px 6px; border-radius: 4px; white-space: nowrap;">
+            จังหวัด
+          </span>
+        </div>
+      `).join('');
+    }
+
+    // Render Administrative Locations (ตำบล / อำเภอ / สถานที่ จาก Geocoder)
+    if (locations.length > 0) {
+      itemsHtml += locations.map((loc) => `
+        <div class="gmaps-drop-item" data-type="location" data-id="${loc.id}">
+          <div style="font-size: 18px; margin-right: 10px;">${loc.icon}</div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-weight: 600; color: #1e293b; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              ${loc.name}
+            </div>
+            <div style="font-size: 11.5px; color: #5f6368; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              ${loc.subtitle}
+            </div>
+          </div>
+          <span style="font-size: 10.5px; font-weight: 600; color: #0369a1; background: #e0f2fe; padding: 2px 6px; border-radius: 4px; white-space: nowrap;">
+            ${loc.typeLabel}
+          </span>
+        </div>
+      `).join('');
+    }
+
+    // Render Dams (เขื่อน)
     if (matchedDams.length > 0) {
-      itemsHtml += matchedDams.slice(0, 5).map((d) => `
+      itemsHtml += matchedDams.slice(0, 4).map((d) => `
         <div class="gmaps-drop-item" data-type="dam" data-id="${d.id}">
           <div style="font-size: 18px; margin-right: 10px;">🏢</div>
-          <div style="flex: 1;">
-            <div style="font-weight: 600; color: #0369a1; font-size: 13px;">${d.name}</div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-weight: 600; color: #0369a1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              ${d.name}
+            </div>
             <div style="font-size: 11.5px; color: #5f6368;">จ.${d.province} · ${d.basin} (${d.agency})</div>
           </div>
-          <span style="font-size: 11px; font-weight: 600; color: #0284c7; background: #e0f2fe; padding: 2px 6px; border-radius: 4px;">
+          <span style="font-size: 11px; font-weight: 600; color: #0284c7; background: #e0f2fe; padding: 2px 6px; border-radius: 4px; white-space: nowrap;">
             น้ำ ${d.percentStorage}%
           </span>
         </div>
       `).join('');
     }
 
-    // Render matching stations
-    itemsHtml += matchedStations
-      .slice(0, 12)
-      .map((st) => {
-        let badgeColor = '#188038';
-        let badgeText = 'ปกติ';
-        if (st.status === 'critical' || st.isOverflow) {
-          badgeColor = '#d93025';
-          badgeText = 'ล้นตลิ่ง';
-        } else if (st.status === 'warning') {
-          badgeColor = '#f29900';
-          badgeText = 'เฝ้าระวัง';
-        } else if (st.status === 'low') {
-          badgeColor = '#64748b';
-          badgeText = 'น้ำน้อย';
-        }
+    // Render Stations (สถานีตรวจวัดน้ำ)
+    if (matchedStations.length > 0) {
+      itemsHtml += matchedStations
+        .slice(0, 8)
+        .map((st) => {
+          let badgeColor = '#188038';
+          let badgeText = 'ปกติ';
+          if (st.status === 'critical' || st.isOverflow) {
+            badgeColor = '#d93025';
+            badgeText = 'ล้นตลิ่ง';
+          } else if (st.status === 'warning') {
+            badgeColor = '#f29900';
+            badgeText = 'เฝ้าระวัง';
+          } else if (st.status === 'low') {
+            badgeColor = '#64748b';
+            badgeText = 'น้ำน้อย';
+          }
 
-        return `
-          <div class="gmaps-drop-item" data-type="station" data-id="${st.id}">
-            <div style="font-size: 16px; margin-right: 10px; color: ${badgeColor};">📍</div>
-            <div style="flex: 1;">
-              <div style="font-weight: 600; color: #202124; font-size: 13px;">${st.name}</div>
-              <div style="font-size: 11.5px; color: #5f6368;">จ.${st.province} · ${st.river} (${st.agency || 'สสน.'})</div>
+          return `
+            <div class="gmaps-drop-item" data-type="station" data-id="${st.id}">
+              <div style="font-size: 16px; margin-right: 10px; color: ${badgeColor};">📍</div>
+              <div style="flex: 1; min-width: 0;">
+                <div style="font-weight: 600; color: #202124; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                  ${st.name}
+                </div>
+                <div style="font-size: 11.5px; color: #5f6368; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                  จ.${st.province} · ${st.river} (${st.agency || 'สสน.'})
+                </div>
+              </div>
+              <span style="font-size: 11px; font-weight: 600; color: ${badgeColor}; background: ${badgeColor}15; padding: 2px 6px; border-radius: 4px; white-space: nowrap;">
+                ${badgeText}
+              </span>
             </div>
-            <span style="font-size: 11px; font-weight: 600; color: ${badgeColor}; background: ${badgeColor}15; padding: 2px 6px; border-radius: 4px;">
-              ${badgeText}
-            </span>
-          </div>
-        `;
-      })
-      .join('');
+          `;
+        })
+        .join('');
+    }
+
+    if (isLoadingLocations) {
+      itemsHtml += `
+        <div style="padding: 8px 12px; font-size: 11px; color: #64748b; display: flex; align-items: center; justify-content: center; gap: 6px; background: #f8fafc; border-top: 1px dashed #e2e8f0;">
+          <span>🔍 กำลังค้นหาตำบล / อำเภอเพิ่มเติม...</span>
+        </div>
+      `;
+    }
 
     dropdown.innerHTML = itemsHtml;
     dropdown.style.display = 'block';
@@ -694,7 +832,14 @@ export function createNavbar(options) {
       item.addEventListener('click', () => {
         const type = item.getAttribute('data-type');
         const id = item.getAttribute('data-id');
-        if (type === 'dam') {
+
+        if (type === 'province') {
+          const prov = provinces.find((p) => String(p.id) === String(id));
+          if (prov && onSearchSelect) onSearchSelect(prov);
+        } else if (type === 'location') {
+          const loc = recentGeoResults.get(id);
+          if (loc && onSearchSelect) onSearchSelect(loc);
+        } else if (type === 'dam') {
           const dam = dams.find((d) => String(d.id) === String(id));
           if (dam && onSearchSelect) onSearchSelect({ ...dam, isDam: true });
         } else {
@@ -727,6 +872,13 @@ export function createNavbar(options) {
   const toggleBtnArrow = toggleBtn.querySelector('.toggle-btn-arrow');
   const layerHeader = overlay.querySelector('#gmaps-layer-header');
 
+  // Mobile Webview requirement: Start collapsed as an icon on mobile screens
+  if (window.innerWidth <= 768) {
+    layerPanel.classList.add('collapsed');
+    toggleBtnText.textContent = 'แสดง';
+    toggleBtnArrow.textContent = '▴';
+  }
+
   function togglePanelCollapse(e) {
     if (e) e.stopPropagation();
     const isCollapsed = layerPanel.classList.toggle('collapsed');
@@ -741,9 +893,20 @@ export function createNavbar(options) {
 
   toggleBtn.addEventListener('click', togglePanelCollapse);
   layerHeader.addEventListener('click', (e) => {
-    // If collapsed, clicking header expands it
+    // If collapsed (or in mobile icon mode), clicking anywhere on the icon/header expands it
     if (layerPanel.classList.contains('collapsed')) {
       togglePanelCollapse(e);
+    }
+  });
+
+  // Close layer panel on mobile when tapping outside
+  document.addEventListener('click', (e) => {
+    if (window.innerWidth <= 768 && !layerPanel.classList.contains('collapsed')) {
+      if (!layerPanel.contains(e.target)) {
+        layerPanel.classList.add('collapsed');
+        toggleBtnText.textContent = 'แสดง';
+        toggleBtnArrow.textContent = '▴';
+      }
     }
   });
 
@@ -773,6 +936,9 @@ export function createNavbar(options) {
         if (leg) leg.style.display = isChecked ? 'block' : 'none';
       } else if (layerId === 'bma-roads') {
         const leg = overlay.querySelector('#legend-bma-roads');
+        if (leg) leg.style.display = isChecked ? 'block' : 'none';
+      } else if (layerId === 'traffy-flood') {
+        const leg = overlay.querySelector('#legend-traffy-flood');
         if (leg) leg.style.display = isChecked ? 'block' : 'none';
       } else if (layerId === 'traffic') {
         const leg = overlay.querySelector('#legend-traffic');

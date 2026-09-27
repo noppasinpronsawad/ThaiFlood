@@ -99,6 +99,8 @@ export function createWaterStationList(stations, onStationSelect) {
       renderDamSheet();
     } else if (currentItem.isRoad) {
       renderRoadSheet();
+    } else if (currentItem.isTraffy) {
+      renderTraffySheet();
     } else if (currentItem.isUserLocation) {
       renderUserLocationSheet();
     } else if (currentItem.isElevation || currentItem.isFloodExtent || currentItem.isNWP) {
@@ -594,6 +596,106 @@ export function createWaterStationList(stations, onStationSelect) {
   }
 
   // ==========================================
+  // 3b. Traffy Fondue Flood Incident Sheet
+  // ==========================================
+  function renderTraffySheet() {
+    const item = currentItem;
+    const isDone = item.stateClass === 'finished' || (item.state && (item.state.includes('เสร็จ') || item.state.includes('แก้ไขแล้ว')));
+    const badgeBg = isDone ? '#ecfdf5' : '#fffbeb';
+    const badgeColor = isDone ? '#059669' : '#d97706';
+    const badgeBorder = isDone ? '#a7f3d0' : '#fde68a';
+    const badgeIcon = isDone ? '✅' : '⏳';
+
+    sheet.innerHTML = `
+      <div class="gmaps-sheet-header">
+        <div style="flex: 1;">
+          <h2 class="gmaps-place-title">🛣️ ${item.address || 'จุดน้ำท่วมขัง Traffy Fondue'}</h2>
+          <div class="gmaps-place-sub">รหัสแจ้งเหตุ #${item.ticket_id} · เขต ${item.district || 'กรุงเทพมหานคร'}</div>
+        </div>
+        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="ปิดแผงข้อมูล">✕</button>
+      </div>
+
+      <div class="gmaps-status-banner" style="background: ${badgeBg}; color: ${badgeColor}; border: 1px solid ${badgeBorder};">
+        <div style="font-size: 22px;">${badgeIcon}</div>
+        <div>
+          <div style="font-weight: 700; font-size: 14px;">สถานะ: ${item.state || 'รับเรื่องแล้ว'}</div>
+          <div style="font-size: 11.5px; opacity: 0.95;">รายงานปัญหาผ่าน Traffy Fondue สวทช. / กทม.</div>
+        </div>
+      </div>
+
+      <div class="gmaps-action-row">
+        <button class="gmaps-action-btn" id="btn-focus-station">
+          <span style="font-size: 15px; color: #1a73e8;">📍</span>
+          <span>ซูมดูจุดเกิดเหตุ</span>
+        </button>
+        <button class="gmaps-action-btn" id="btn-view-weather">
+          <span style="font-size: 15px; color: #1a73e8;">🌧️</span>
+          <span>พยากรณ์อากาศ</span>
+        </button>
+      </div>
+
+      ${item.photo_url ? `
+        <div style="padding: 12px 16px 4px 16px;">
+          <div style="font-size: 11.5px; font-weight: 700; color: #475569; margin-bottom: 6px;">📷 ภาพถ่ายจุดเกิดเหตุ</div>
+          <div style="border-radius: 10px; overflow: hidden; max-height: 220px; border: 1px solid #e2e8f0; background: #0f172a; text-align: center;">
+            <img src="${item.photo_url}" alt="ภาพถ่ายจุดน้ำท่วม" style="width: 100%; height: auto; max-height: 220px; object-fit: cover; display: block;" loading="lazy" />
+          </div>
+        </div>
+      ` : ''}
+
+      <div style="padding: 10px 16px; background: #f8fafc; border-bottom: 1px solid #e8eaed; font-size: 12px; color: #1e293b;">
+        <b>📝 รายละเอียดเหตุการณ์:</b><br/>
+        <div style="margin-top: 4px; color: #334155; line-height: 1.45; font-size: 12.5px;">${item.description || 'ไม่มีรายละเอียดเพิ่มเติม'}</div>
+      </div>
+
+      <div class="gmaps-details-list">
+        <div class="gmaps-detail-row">
+          <span class="gmaps-row-icon">📍</span>
+          <div class="gmaps-row-content">
+            <div class="gmaps-row-label">สถานที่ / จุดสังเกต</div>
+            <div class="gmaps-row-value">${item.address || '-'}</div>
+          </div>
+        </div>
+
+        <div class="gmaps-detail-row">
+          <span class="gmaps-row-icon">🏛️</span>
+          <div class="gmaps-row-content">
+            <div class="gmaps-row-label">เขตพื้นที่รับผิดชอบ</div>
+            <div class="gmaps-row-value">${item.district || 'กรุงเทพมหานคร'}</div>
+          </div>
+        </div>
+
+        <div class="gmaps-detail-row">
+          <span class="gmaps-row-icon">🕒</span>
+          <div class="gmaps-row-content">
+            <div class="gmaps-row-label">เวลาที่แจ้งเหตุ</div>
+            <div class="gmaps-row-value" style="color: #64748b;">${item.formattedTime || item.timestamp || '-'}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin: 12px 16px; display: flex; gap: 8px;">
+        <a href="${item.traffy_url || `https://share.traffy.in.th/teamchadchart/share?ticket_id=${item.ticket_id}`}" target="_blank" rel="noopener noreferrer" style="flex: 1; text-align: center; background: #0284c7; color: #fff; padding: 8px 12px; border-radius: 8px; text-decoration: none; font-size: 12px; font-weight: 600;">
+          ดูบน Traffy Fondue ↗
+        </a>
+        <a href="${item.line_url || 'https://line.me/R/ti/p/@traffyfondue'}" target="_blank" rel="noopener noreferrer" style="flex: 1; text-align: center; background: #16a34a; color: #fff; padding: 8px 12px; border-radius: 8px; text-decoration: none; font-size: 12px; font-weight: 600;">
+          แจ้งเหตุเพิ่มเติม 💬
+        </a>
+      </div>
+
+      <!-- Multi-Layer Companion Cards -->
+      ${renderCompanionLayerCards(item.lat || 13.75, item.lng || 100.5, 'กรุงเทพมหานคร')}
+
+      <!-- Weather & Forecast Section -->
+      ${renderWeatherSectionHtml('กรุงเทพมหานคร')}
+    `;
+
+    attachEvents();
+    loadSheetWeather('กรุงเทพมหานคร', item.lat || 13.75, item.lng || 100.5);
+    loadGeologyIfEnabled(item.lat || 13.75, item.lng || 100.5);
+  }
+
+  // ==========================================
   // 4. User Current Location Sheet
   // ==========================================
   function renderUserLocationSheet() {
@@ -661,10 +763,12 @@ export function createWaterStationList(stations, onStationSelect) {
     const title = item.name || (item.isElevation ? `ระดับความสูง ${item.elevation} ม.` : 'ข้อมูลพื้นที่');
     const desc = item.desc || item.recommendation || item.severityLabel || 'ข้อมูลการตรวจวัด';
 
+    const prov = item.province || 'กรุงเทพมหานคร';
+
     sheet.innerHTML = `
       <div class="gmaps-sheet-header">
         <div style="flex: 1;">
-          <h2 class="gmaps-place-title">📌 ${title}</h2>
+          <h2 class="gmaps-place-title">${item.icon || '📌'} ${title}</h2>
           <div class="gmaps-place-sub">พิกัด ${item.lat ? item.lat.toFixed(4) + ', ' + item.lng.toFixed(4) : 'จุดที่เลือก'}</div>
         </div>
         <button class="gmaps-sheet-close" id="btn-gmaps-close" title="ปิดแผงข้อมูล">✕</button>
@@ -679,14 +783,14 @@ export function createWaterStationList(stations, onStationSelect) {
       </div>
 
       <!-- Multi-Layer Companion Cards -->
-      ${renderCompanionLayerCards(item.lat, item.lng, 'กรุงเทพมหานคร')}
+      ${renderCompanionLayerCards(item.lat, item.lng, prov)}
 
       <!-- Weather & Forecast Section -->
-      ${renderWeatherSectionHtml('กรุงเทพมหานคร')}
+      ${renderWeatherSectionHtml(prov)}
     `;
 
     attachEvents();
-    loadSheetWeather('กรุงเทพมหานคร', item.lat, item.lng);
+    loadSheetWeather(prov, item.lat, item.lng);
     loadGeologyIfEnabled(item.lat, item.lng);
   }
 
@@ -1031,6 +1135,12 @@ export function createWaterStationList(stations, onStationSelect) {
     },
     selectRoad: (road) => {
       currentItem = { isRoad: true, ...road };
+      render();
+      sheet.classList.add('open');
+      isVisible = true;
+    },
+    selectTraffy: (traffyItem) => {
+      currentItem = { isTraffy: true, ...traffyItem };
       render();
       sheet.classList.add('open');
       isVisible = true;

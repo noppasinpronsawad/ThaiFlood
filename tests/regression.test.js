@@ -812,6 +812,99 @@ async function runAllTests() {
     assert.ok(stationListCode.includes('distToRoads <= 5.0'), 'Must gate BMA road card to 5km radius');
   });
 
+  await test('Bangkok Default Center, Unified Bottom Legend Controller, Button Clearance, and Minimalist Mobile Layer Icon', () => {
+    const mapViewerCode = fs.readFileSync(path.join(rootDir, 'src/components/MapViewer.js'), 'utf-8');
+    const navbarCode = fs.readFileSync(path.join(rootDir, 'src/components/Navbar.js'), 'utf-8');
+    const cssCode = fs.readFileSync(path.join(rootDir, 'src/index.css'), 'utf-8');
+
+    // 1. Initial Map View: Center and Zoom to Bangkok (กรุงเทพมหานคร)
+    assert.ok(mapViewerCode.includes('center: [100.5018, 13.7563]'), 'Default map center must be Bangkok [100.5018, 13.7563]');
+    assert.ok(mapViewerCode.includes('zoom: 10.8'), 'Default zoom must be 10.8 to frame Bangkok metropolis');
+
+    // 2. Unified Bottom Legend & Day Controller with Collapsible Description
+    assert.ok(mapViewerCode.includes('gmaps-bottom-legend-card'), 'MapViewer must include gmaps-bottom-legend-card');
+    assert.ok(mapViewerCode.includes('btn-toggle-legend-desc'), 'Must have btn-toggle-legend-desc for collapsing/expanding description');
+    assert.ok(mapViewerCode.includes('bottom-legend-desc-panel'), 'Must have bottom-legend-desc-panel');
+    assert.ok(mapViewerCode.includes('updateBottomLegendBar'), 'Must implement updateBottomLegendBar');
+    assert.ok(mapViewerCode.includes('LAYER_LEGEND_CONFIGS'), 'Must have configs for color scale layers');
+
+    // 3. Button Clearance: Must NOT overlap locate me, Zoom In/Out, 3D, and Weather pill
+    assert.ok(cssCode.includes('max-width: min(560px, calc(100vw - 240px));'), 'Desktop bottom legend must clear controls stack and weather pill');
+    assert.ok(cssCode.includes('calc(100vw - 52px)') || cssCode.includes('max-width: calc(100vw - 65px);'), 'Mobile bottom legend must clear right controls stack');
+    assert.ok(cssCode.includes('bottom: calc(76px + env(safe-area-inset-bottom, 0px));'), 'Mobile bottom legend must sit above basemap button');
+    assert.ok(cssCode.includes('.gmaps-layer-panel .layer-legend-box') && cssCode.includes('display: none !important;'), 'Right panel legends must be hidden to separate display to bottom');
+
+    // 4. Minimalist Mobile Layer Icon (Vector image matching two stacked isometric diamond layers)
+    assert.ok(navbarCode.includes('layer-icon-svg'), 'Navbar must render layer-icon-svg');
+    assert.ok(navbarCode.includes('M12 3.5L21.5 8.8L12 14.1L2.5 8.8L12 3.5Z'), 'Must have top isometric diamond layer path');
+    assert.ok(navbarCode.includes('M2.5 12.8L12 18.1L21.5 12.8L21.5 15.8L12 21.1L2.5 15.8L2.5 12.8Z'), 'Must have bottom isometric chevron layer path');
+    assert.ok(cssCode.includes('.layer-icon-svg'), 'CSS must style .layer-icon-svg');
+    assert.ok(cssCode.includes('.gmaps-layer-panel.collapsed .layer-icon-svg'), 'CSS must style collapsed mobile layer icon');
+
+    // 5. Mobile & iPhone SE Legend Expansion and Basemap Icon Reduction
+    assert.ok(cssCode.includes('width: 36px;') && cssCode.includes('height: 36px;'), 'Mobile basemap thumb must be reduced to 36x36px');
+    assert.ok(cssCode.includes('width: 32px;') && cssCode.includes('height: 32px;'), 'iPhone SE basemap thumb must be reduced to 32x32px');
+    assert.ok(cssCode.includes('.gmaps-bottom-legend-card .legend-day-section') && cssCode.includes('flex-direction: column;'), 'Mobile legend day section must stack vertically');
+    assert.ok(cssCode.includes('touch-action: pan-x;'), 'Day chips must support horizontal touch swiping on mobile');
+    assert.ok(cssCode.includes('width: calc(100vw - 52px) !important;'), 'Mobile legend must strictly enforce expanded width');
+  });
+
+  await test('Traffy Fondue Road Flood Layer & Minimalist Road Icon', async () => {
+    const navbarCode = fs.readFileSync(path.join(rootDir, 'src/components/Navbar.js'), 'utf-8');
+    const mapViewerCode = fs.readFileSync(path.join(rootDir, 'src/components/MapViewer.js'), 'utf-8');
+    const cssCode = fs.readFileSync(path.join(rootDir, 'src/index.css'), 'utf-8');
+    const traffyService = await import(path.join(rootDir, 'src/services/traffyFondueService.js'));
+
+    // 1. Layer Toggle in Navbar & Mobile Panel
+    assert.ok(navbarCode.includes('id="toggle-traffy-flood"'), 'Navbar must have toggle-traffy-flood');
+    assert.ok(navbarCode.includes('data-layer="traffy-flood"'), 'Must have data-layer="traffy-flood"');
+    assert.ok(navbarCode.includes('minimal-road-layer-icon'), 'Navbar must render minimal road layer icon');
+
+    // 2. Traffy Fondue Flood Service
+    assert.ok(typeof traffyService.getTraffyFloodGeoJSON === 'function', 'Service must export getTraffyFloodGeoJSON');
+    const geo = await traffyService.getTraffyFloodGeoJSON();
+    assert.ok(geo && geo.type === 'FeatureCollection', 'Must return valid GeoJSON FeatureCollection');
+    assert.ok(geo.features.length > 0, 'Must have flood incident features');
+    assert.ok(geo.features[0].geometry.type === 'Point', 'Incidents must be Point geometries');
+
+    // 3. Minimalist Road Icon & Map Markers
+    assert.ok(mapViewerCode.includes('traffy-road-svg'), 'MapViewer must render traffy-road-svg minimal road icon');
+    assert.ok(mapViewerCode.includes('traffy-road-marker-pin'), 'MapViewer must style traffy-road-marker-pin');
+    assert.ok(mapViewerCode.includes("initTraffyFloodLayer"), 'MapViewer must implement initTraffyFloodLayer');
+    assert.ok(mapViewerCode.includes("'traffy-flood'"), 'MapViewer must include traffy-flood in LAYER_LEGEND_CONFIGS');
+
+    // 4. CSS Styling
+    assert.ok(cssCode.includes('.minimal-road-layer-icon'), 'CSS must style .minimal-road-layer-icon');
+    assert.ok(cssCode.includes('.traffy-road-marker-pin'), 'CSS must style .traffy-road-marker-pin');
+  });
+
+  // 36. Legend Synchronization, Auto-Collapse on Basemap Interaction & Traffy Fondue Place Sheet
+  await test('Legend Sync, Basemap Auto-Collapse & Traffy Fondue Place Sheet', () => {
+    const mapViewerCode = fs.readFileSync(path.join(rootDir, 'src/components/MapViewer.js'), 'utf-8');
+    const mainCode = fs.readFileSync(path.join(rootDir, 'src/main.js'), 'utf-8');
+    const stationListCode = fs.readFileSync(path.join(rootDir, 'src/components/WaterStationList.js'), 'utf-8');
+    const cssCode = fs.readFileSync(path.join(rootDir, 'src/index.css'), 'utf-8');
+
+    // 1. Legend Day Selector suppression for non-forecast layers
+    assert.ok(mapViewerCode.includes("hasDaySelector: false"), 'Non-NWP layers must declare hasDaySelector: false');
+    assert.ok(mapViewerCode.includes("daySection.classList.add('is-hidden')"), 'Must add is-hidden class when hasDaySelector is false');
+    assert.ok(cssCode.includes('.legend-day-section.is-hidden') && cssCode.includes('display: none !important'), 'CSS must strictly hide day selector when is-hidden');
+
+    // 2. Legend Auto-Collapse on Basemap interaction (same logic as layer panel)
+    assert.ok(mapViewerCode.includes('function collapseLegendDesc()'), 'MapViewer must implement collapseLegendDesc');
+    assert.ok(mapViewerCode.includes('autoCollapseLayerPanel') && mapViewerCode.includes('collapseLegendDesc();'), 'autoCollapseLayerPanel must trigger collapseLegendDesc');
+    assert.ok(mapViewerCode.includes("mapInstance.on('dragstart'") && mapViewerCode.includes('collapseLegendDesc()'), 'Dragstart must collapse legend description');
+    assert.ok(mapViewerCode.includes("mapInstance.on('touchstart'") && mapViewerCode.includes('collapseLegendDesc()'), 'Touchstart must collapse legend description');
+    assert.ok(mapViewerCode.includes("mapInstance.on('click'") && mapViewerCode.includes('collapseLegendDesc()'), 'Map click must collapse legend description');
+
+    // 3. Traffy Fondue displays as Place Sheet (not as popup message)
+    assert.ok(stationListCode.includes('function renderTraffySheet()'), 'WaterStationList must implement renderTraffySheet');
+    assert.ok(stationListCode.includes('selectTraffy:'), 'WaterStationList must export selectTraffy method');
+    assert.ok(mainCode.includes('placeSheetInstance.selectTraffy(item)'), 'main.js must route isTraffy to selectTraffy');
+    assert.ok(mapViewerCode.includes('isTraffy: true') && mapViewerCode.includes('options.onStationSelect'), 'MapViewer marker click must trigger onStationSelect with isTraffy: true');
+    assert.ok(!mapViewerCode.includes('showTraffyPopup(p, coords)'), 'MapViewer must NOT display popup message for Traffy marker click');
+  });
+
   console.log(`\n🎉 Regression Tests Completed: ${passedTests} passed.\n`);
 }
 

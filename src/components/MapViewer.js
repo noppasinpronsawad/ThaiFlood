@@ -13,6 +13,7 @@ import { fetchNWPModelData, buildGFSGeoJSON, buildECMWFGeoJSON } from '../servic
 import bmaFloodRoadLines from '../data/bmaFloodRoadLines.json';
 import { createWindFieldLayer } from './WindFieldLayer.js';
 import { evaluateDamRuleCurve } from '../services/damRuleCurveService.js';
+import { getTraffyFloodGeoJSON } from '../services/traffyFondueService.js';
 
 export function createMapViewer(options) {
   const { basinsData, floodNowData, forecast7dData, stationsData, damsData = [], onStationSelect } = options;
@@ -113,11 +114,14 @@ export function createMapViewer(options) {
   weatherPill.id = 'gmaps-apple-weather-pill';
   weatherPill.title = 'สภาพอากาศและอุณหภูมิตามขอบเขตจังหวัด (คลิกดูพยากรณ์ 7 วัน)';
   weatherPill.innerHTML = `
-    <span class="pill-icon" id="pill-weather-icon">🌤️</span>
-    <span class="pill-temp" id="pill-weather-temp">--°</span>
-    <span class="pill-divider">·</span>
-    <span class="pill-location" id="pill-weather-prov">กำลังโหลด...</span>
-    <span class="pill-desc" id="pill-weather-desc"></span>
+    <div class="pill-line-top">
+      <span class="pill-icon" id="pill-weather-icon">🌤️</span>
+      <span class="pill-temp" id="pill-weather-temp">--°</span>
+      <span class="pill-location" id="pill-weather-prov">กำลังโหลด...</span>
+    </div>
+    <div class="pill-line-bottom">
+      <span class="pill-desc" id="pill-weather-desc"></span>
+    </div>
   `;
   container.appendChild(weatherPill);
 
@@ -147,24 +151,41 @@ export function createMapViewer(options) {
   let userLocationPopup = null;
   let toastTimeout = null;
 
-  // Floating NWP Day Controller (appears when GFS or ECMWF is toggled ON)
+  const activeLegendLayers = new Set();
+  let currentActiveLegendId = 'ecmwf';
+  let isLegendDescExpanded = false;
+
+  // Unified Floating Bottom Legend & Day Controller
   const ecmwfFloatBar = document.createElement('div');
-  ecmwfFloatBar.className = 'gmaps-ecmwf-float-bar';
+  ecmwfFloatBar.className = 'gmaps-ecmwf-float-bar gmaps-bottom-legend-card';
   ecmwfFloatBar.id = 'gmaps-ecmwf-float-bar';
   ecmwfFloatBar.style.display = 'none';
   ecmwfFloatBar.innerHTML = `
-    <div class="float-label">
-      <span>🇪🇺 <b>ECMWF IFS:</b></span>
-      <span id="ecmwf-float-date" style="color: #4f46e5; font-weight:700;">วันนี้</span>
+    <div class="legend-card-header">
+      <div class="legend-tabs-wrapper" id="legend-tabs-wrapper"></div>
+      <button class="btn-toggle-legend-desc" id="btn-toggle-legend-desc" type="button" aria-expanded="false" title="ย่อหรือขยายคำอธิบาย">
+        <span class="desc-toggle-text">คำอธิบาย</span>
+        <span class="desc-toggle-icon">▼</span>
+      </button>
     </div>
-    <div class="float-chips">
-      <button class="float-chip active" data-day="0">วันนี้</button>
-      <button class="float-chip" data-day="1">+1 วัน</button>
-      <button class="float-chip" data-day="2">+2 วัน</button>
-      <button class="float-chip" data-day="3">+3 วัน</button>
-      <button class="float-chip" data-day="4">+4 วัน</button>
-      <button class="float-chip" data-day="5">+5 วัน</button>
-      <button class="float-chip" data-day="6">+6 วัน</button>
+    <div class="legend-day-section" id="legend-day-section" style="display: none;">
+      <div class="float-label">
+        <span id="ecmwf-float-title">🇪🇺 <b>ECMWF IFS:</b></span>
+        <span id="ecmwf-float-date" style="color: #4f46e5; font-weight:700;">วันนี้</span>
+      </div>
+      <div class="float-chips">
+        <button class="float-chip active" data-day="0">วันนี้</button>
+        <button class="float-chip" data-day="1">+1 วัน</button>
+        <button class="float-chip" data-day="2">+2 วัน</button>
+        <button class="float-chip" data-day="3">+3 วัน</button>
+        <button class="float-chip" data-day="4">+4 วัน</button>
+        <button class="float-chip" data-day="5">+5 วัน</button>
+        <button class="float-chip" data-day="6">+6 วัน</button>
+      </div>
+    </div>
+    <div class="legend-scale-section" id="legend-scale-section"></div>
+    <div class="bottom-legend-desc-panel" id="bottom-legend-desc-panel">
+      <div class="desc-content" id="bottom-legend-desc-text"></div>
     </div>
   `;
   container.appendChild(ecmwfFloatBar);
@@ -175,6 +196,30 @@ export function createMapViewer(options) {
       setNWPForecastDay(day);
     });
   });
+
+  const descToggleBtn = ecmwfFloatBar.querySelector('#btn-toggle-legend-desc');
+  const descPanel = ecmwfFloatBar.querySelector('#bottom-legend-desc-panel');
+  if (descToggleBtn && descPanel) {
+    descToggleBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      isLegendDescExpanded = !isLegendDescExpanded;
+      descPanel.classList.toggle('expanded', isLegendDescExpanded);
+      descToggleBtn.setAttribute('aria-expanded', isLegendDescExpanded ? 'true' : 'false');
+      const icon = descToggleBtn.querySelector('.desc-toggle-icon');
+      if (icon) icon.textContent = isLegendDescExpanded ? '▲' : '▼';
+    });
+  }
+
+  function collapseLegendDesc() {
+    if (!isLegendDescExpanded) return;
+    isLegendDescExpanded = false;
+    if (descPanel) descPanel.classList.remove('expanded');
+    if (descToggleBtn) {
+      descToggleBtn.setAttribute('aria-expanded', 'false');
+      const icon = descToggleBtn.querySelector('.desc-toggle-icon');
+      if (icon) icon.textContent = '▼';
+    }
+  }
 
   let windFieldLayer = null;
 
@@ -560,8 +605,8 @@ export function createMapViewer(options) {
           }
         ]
       },
-      center: [100.4, 15.2],
-      zoom: 6.8,
+      center: [100.5018, 13.7563],
+      zoom: 10.8,
       maxZoom: 16,
       minZoom: 5,
       attributionControl: false
@@ -732,6 +777,7 @@ export function createMapViewer(options) {
     let is3DPitched = false;
 
     function switchBasemap(mode) {
+      collapseLegendDesc();
       if (!mapInstance || activeBasemap === mode) return;
       activeBasemap = mode;
       if (btnStreet) btnStreet.classList.toggle('active', mode === 'street');
@@ -788,9 +834,24 @@ export function createMapViewer(options) {
       }
     }
 
-    if (btnStreet) btnStreet.addEventListener('click', () => switchBasemap('street'));
-    if (btnSat) btnSat.addEventListener('click', () => switchBasemap('satellite'));
-    if (btnTopo) btnTopo.addEventListener('click', () => switchBasemap('topo'));
+    if (btnStreet) btnStreet.addEventListener('click', () => {
+      collapseLegendDesc();
+      switchBasemap('street');
+      basemapSwitcher.classList.remove('expanded');
+      if (basemapArrow) basemapArrow.textContent = '»';
+    });
+    if (btnSat) btnSat.addEventListener('click', () => {
+      collapseLegendDesc();
+      switchBasemap('satellite');
+      basemapSwitcher.classList.remove('expanded');
+      if (basemapArrow) basemapArrow.textContent = '»';
+    });
+    if (btnTopo) btnTopo.addEventListener('click', () => {
+      collapseLegendDesc();
+      switchBasemap('topo');
+      basemapSwitcher.classList.remove('expanded');
+      if (basemapArrow) basemapArrow.textContent = '»';
+    });
 
     // Toggle expand/collapse on click of trigger or arrow
     function toggleBasemapExpand(e) {
@@ -805,6 +866,14 @@ export function createMapViewer(options) {
       basemapSwitcher.classList.remove('expanded');
       if (basemapArrow) basemapArrow.textContent = '»';
       updateBasemapLabel(basemapNames[activeBasemap] || 'แผนที่');
+    });
+
+    // Close basemap popup on mobile when tapping outside
+    document.addEventListener('click', (e) => {
+      if (basemapSwitcher && !basemapSwitcher.contains(e.target)) {
+        basemapSwitcher.classList.remove('expanded');
+        if (basemapArrow) basemapArrow.textContent = '»';
+      }
     });
 
     // Hover effect on basemap cards to preview the label
@@ -960,7 +1029,7 @@ export function createMapViewer(options) {
           provEl.textContent = weather.province;
           tempEl.textContent = `${weather.temp}°`;
           iconEl.textContent = weather.icon || '🌤️';
-          descEl.textContent = weather.weatherDesc ? `· ${weather.weatherDesc}` : '';
+          descEl.textContent = weather.weatherDesc || '';
           weatherPill.title = `จ.${weather.province}: ${weather.temp}°C (${weather.weatherDesc}) - คลิกดูพยากรณ์ฝน 7 วัน`;
         }
       } catch (err) {
@@ -997,6 +1066,7 @@ export function createMapViewer(options) {
       renderStationMarkers();
       renderFlowDirectionArrows();
       renderBMARoadFloodLines();
+      initTraffyFloodLayer();
       initTrafficLayer();
       initNWPForecastLayers();
       refreshRadarTiles();
@@ -1007,8 +1077,9 @@ export function createMapViewer(options) {
       handleZoomAndMove();
     });
 
-    // Requirement 2: Auto collapse layer panel on map drag or click
+    // Requirement 2: Auto collapse layer panel and expanded legend description on map drag, touch, or click
     function autoCollapseLayerPanel() {
+      collapseLegendDesc();
       const panel = document.querySelector('#gmaps-layer-panel');
       if (panel && !panel.classList.contains('collapsed')) {
         panel.classList.add('collapsed');
@@ -1022,14 +1093,28 @@ export function createMapViewer(options) {
       }
     }
 
-    mapInstance.on('dragstart', autoCollapseLayerPanel);
+    mapInstance.on('dragstart', () => {
+      autoCollapseLayerPanel();
+      collapseLegendDesc();
+    });
+    mapInstance.on('touchstart', () => {
+      autoCollapseLayerPanel();
+      collapseLegendDesc();
+    });
     mapInstance.on('click', (e) => {
       autoCollapseLayerPanel();
+      collapseLegendDesc();
       if (windFieldLayer && windFieldLayer.isVisible()) {
         const w = windFieldLayer.getWindAtPoint(e.lngLat.lat, e.lngLat.lng);
         showToast(`💨 ลมผิวพื้น 10 ม.: ${w.speedKmh} กม./ชม. (${w.speedMps} m/s) · ทิศ${w.directionText} (${w.directionDegrees}°) · Beaufort ${w.beaufort}`, '💨');
       }
     });
+
+    const mapCanvasEl = mapInstance.getCanvas();
+    if (mapCanvasEl) {
+      mapCanvasEl.addEventListener('touchstart', collapseLegendDesc, { passive: true });
+      mapCanvasEl.addEventListener('pointerdown', collapseLegendDesc, { passive: true });
+    }
 
     mapInstance.on('zoom', handleZoomAndMove);
     mapInstance.on('moveend', () => {
@@ -1507,6 +1592,8 @@ export function createMapViewer(options) {
     mapInstance.on('mouseleave', 'layer-reservoirs-fill', () => {
       mapInstance.getCanvas().style.cursor = '';
     });
+    activeLegendLayers.add('dams');
+    updateBottomLegendBar();
   }
 
   function initTrafficLayer() {
@@ -1765,36 +1852,275 @@ export function createMapViewer(options) {
     }
   }
 
-  function updateNWPFloatBar() {
+  const LAYER_LEGEND_CONFIGS = {
+    ecmwf: {
+      id: 'ecmwf',
+      name: 'ECMWF IFS (พยากรณ์ฝน 7 วัน)',
+      shortName: '🇪🇺 ECMWF IFS',
+      icon: '🇪🇺',
+      hasDaySelector: true,
+      modelCode: 'ECMWF',
+      colorScale: {
+        type: 'gradient',
+        gradient: 'linear-gradient(to right, #f8fafc 0%, #a7f3d0 20%, #34d399 40%, #38bdf8 60%, #818cf8 80%, #f43f5e 100%)',
+        labels: ['0', '10', '20', '35', '50+ มม.']
+      },
+      description: 'แบบจำลอง European Centre for Medium-Range Weather Forecasts (ECMWF IFS 9km) มาตรฐานความแม่นยำสูงสุดระดับโลก วิเคราะห์หย่อมความกดอากาศต่ำและแนวฝนสะสมล่วงหน้ารายวัน'
+    },
+    gfs: {
+      id: 'gfs',
+      name: 'GFS NOAA (พยากรณ์ฝน 7 วัน)',
+      shortName: '🇺🇸 GFS NOAA',
+      icon: '🇺🇸',
+      hasDaySelector: true,
+      modelCode: 'GFS',
+      colorScale: {
+        type: 'gradient',
+        gradient: 'linear-gradient(to right, #f8fafc 0%, #a7f3d0 20%, #34d399 40%, #38bdf8 60%, #818cf8 80%, #f43f5e 100%)',
+        labels: ['0', '10', '20', '35', '50+ มม.']
+      },
+      description: 'แบบจำลอง Global Forecast System (NOAA/NCEP) ความละเอียด 13 กม. คำนวณแนวโน้มปริมาณน้ำฝนสะสมล่วงหน้า 7 วัน'
+    },
+    'sat-water': {
+      id: 'sat-water',
+      name: 'เรดาร์ตรวจวัดน้ำฝน (Doppler Radar)',
+      shortName: '📡 เรดาร์ Doppler',
+      icon: '📡',
+      hasDaySelector: false,
+      colorScale: {
+        type: 'gradient',
+        gradient: 'linear-gradient(to right, #00ecec, #01a0f6, #0000f6, #00eb00, #00c800, #009000, #ffff00, #e7c000, #ff9000, #ff0000, #d60000, #c00000, #ff00f0, #9600b4)',
+        labels: ['10 (เบา)', '30 (ปานกลาง)', '45 (หนัก)', '60+ dBZ (รุนแรง)']
+      },
+      description: 'เรดาร์ Doppler ตรวจจับหยดน้ำฝนจริงที่ตกสู่พื้นดินทุก 10 นาที เชื่อมต่อเครือข่ายสถานีเรดาร์ กรมอุตุนิยมวิทยา (TMD)'
+    },
+    'sat-clouds': {
+      id: 'sat-clouds',
+      name: 'ภาพดาวเทียมกลุ่มเมฆ (Himawari-9 Clean IR)',
+      shortName: '🛰️ ดาวเทียมเมฆ',
+      icon: '🛰️',
+      hasDaySelector: false,
+      colorScale: {
+        type: 'gradient',
+        gradient: 'linear-gradient(to right, #4575b4, #74add1, #abd9e9, #ffffbf, #fee090, #fdae61, #f46d43, #d73027)',
+        labels: ['เมฆชั้นต่ำ', 'เมฆชั้นกลาง', 'ยอดเมฆสูง', 'พายุฝนฟ้าคะนอง']
+      },
+      description: 'ภาพถ่ายดาวเทียมอุตุนิยมวิทยา Himawari-9 Clean IR ตรวจจับอุณหภูมิยอดเมฆเพื่อระบุกลุ่มเมฆฝนฟ้าคะนองรุนแรง อัปเดตทุก 10 นาที ผ่าน NASA GIBS'
+    },
+    'wind-field': {
+      id: 'wind-field',
+      name: 'กระแสลมผิวพื้น 10 เมตร (WMO Scale)',
+      shortName: '💨 กระแสลม 10ม.',
+      icon: '💨',
+      hasDaySelector: false,
+      colorScale: {
+        type: 'gradient',
+        gradient: 'linear-gradient(to right, #38bdf8, #34d399, #a3e635, #facc15, #fb923c, #f43f5e, #c084fc)',
+        labels: ['0 (ลมอ่อน)', '5 m/s (18 km/h)', '12 m/s', '24+ m/s (พายุ)']
+      },
+      description: 'แบบจำลองกระแสลมผิวพื้นระดับ 10 เมตรตามมาตราโบฟอร์ต (Beaufort Scale) คลิกบนแผนที่เพื่อดูความเร็วและทิศทางลมสด'
+    },
+    dams: {
+      id: 'dams',
+      name: 'สถานะปริมาตรน้ำในเขื่อน',
+      shortName: '💧 สถานะเขื่อน',
+      icon: '💧',
+      hasDaySelector: false,
+      colorScale: {
+        type: 'chips',
+        items: [
+          { color: '#dc2626', label: 'วิกฤต (≥80%)' },
+          { color: '#ea580c', label: 'เฝ้าระวัง (60-79%)' },
+          { color: '#0284c7', label: 'ปกติ (30-59%)' },
+          { color: '#d97706', label: 'น้ำน้อย (<30%)' }
+        ]
+      },
+      description: 'สีของสัญลักษณ์เขื่อนสะท้อนตาม % ปริมาตรน้ำกักเก็บจริงเทียบเกณฑ์ควบคุม (Rule Curve) จากกรมชลประทานและ กฟผ.'
+    },
+    'bma-roads': {
+      id: 'bma-roads',
+      name: 'เส้นทางน้ำท่วมถนน กทม.',
+      shortName: '🚗 ถนนน้ำท่วม กทม.',
+      icon: '🚗',
+      hasDaySelector: false,
+      colorScale: {
+        type: 'chips',
+        items: [
+          { color: '#dc2626', label: 'เสี่ยงท่วมสูง (> 15 ซม.)' },
+          { color: '#ea580c', label: 'เฝ้าระวังน้ำขัง (5-15 ซม.)' }
+        ]
+      },
+      description: 'ข้อมูลสำนักการระบายน้ำ กทม. แสดงแนวถนน 23 จุดเสี่ยง พร้อมปุ่มแจ้งเหตุ Traffy Fondue และสายด่วน 1555'
+    },
+    'traffy-flood': {
+      id: 'traffy-flood',
+      name: 'น้ำท่วมขัง Traffy Fondue',
+      shortName: '🛣️ Traffy Fondue',
+      icon: '🛣️',
+      hasDaySelector: false,
+      colorScale: {
+        type: 'chips',
+        items: [
+          { color: '#f59e0b', label: 'รอรับเรื่อง / กำลังดำเนินการ' },
+          { color: '#10b981', label: 'แก้ไขแล้ว / น้ำลด' }
+        ]
+      },
+      description: 'รายงานจุดน้ำท่วมขังบนผิวถนนจากระบบ Traffy Fondue (สวทช. / กทม.) คลิกที่หมุดถนนเพื่อดูภาพถ่ายและรายละเอียดเหตุการณ์สด'
+    },
+    traffic: {
+      id: 'traffic',
+      name: 'สภาพการจราจรสด',
+      shortName: '🚦 การจราจร',
+      icon: '🚦',
+      hasDaySelector: false,
+      colorScale: {
+        type: 'chips',
+        items: [
+          { color: '#16a34a', label: 'คล่องตัว' },
+          { color: '#eab308', label: 'ชะลอตัว' },
+          { color: '#dc2626', label: 'ติดขัด' }
+        ]
+      },
+      description: 'สภาพการจราจรสดบนเส้นทางหลัก (แสดงผลอัตโนมัติเมื่อซูมระดับถนน Zoom 13 ขึ้นไป)'
+    },
+    'dmr-geology': {
+      id: 'dmr-geology',
+      name: 'ธรณีวิทยา (DMR 1:250k)',
+      shortName: '🪨 ธรณีวิทยา',
+      icon: '🪨',
+      hasDaySelector: false,
+      colorScale: {
+        type: 'chips',
+        items: [
+          { color: '#eab308', label: 'ตะกอนน้ำพา / หินร่วน' },
+          { color: '#dc2626', label: 'รอยเลื่อนมีพลัง' }
+        ]
+      },
+      description: 'แผนที่ธรณีวิทยาและหินฐาน กรมทรัพยากรธรณี คลิกบนแผนที่เพื่อดูชื่อหน่วยหิน สัญลักษณ์ และอายุทางธรณี'
+    }
+  };
+
+  function updateBottomLegendBar() {
     const floatBar = container.querySelector('#gmaps-ecmwf-float-bar');
     if (!floatBar) return;
-    const gfsOn = mapInstance && mapInstance.getLayer('layer-gfs-fill') && mapInstance.getLayoutProperty('layer-gfs-fill', 'visibility') === 'visible';
-    const ecmwfOn = mapInstance && mapInstance.getLayer('layer-ecmwf-fill') && mapInstance.getLayoutProperty('layer-ecmwf-fill', 'visibility') === 'visible';
 
-    if (gfsOn || ecmwfOn) {
-      floatBar.style.display = 'flex';
-      const labelSpan = floatBar.querySelector('.float-label');
-      const activeDay = gfsOn ? currentGFSDay : currentECMWFDay;
-      const f = cachedNWPData && cachedNWPData[0]?.dailyForecasts[activeDay];
-      const dateStr = f ? `${f.displayDate} (${f.dayLabel})` : 'วันนี้';
+    // Check layer visibility directly from map and active state
+    const isLayerOn = (lId) => {
+      if (lId === 'ecmwf') return !!(mapInstance && mapInstance.getLayer('layer-ecmwf-fill') && mapInstance.getLayoutProperty('layer-ecmwf-fill', 'visibility') === 'visible');
+      if (lId === 'gfs') return !!(mapInstance && mapInstance.getLayer('layer-gfs-fill') && mapInstance.getLayoutProperty('layer-gfs-fill', 'visibility') === 'visible');
+      if (lId === 'sat-water') return !!(mapInstance && mapInstance.getLayer('nasa-water-satellite-layer') && mapInstance.getLayoutProperty('nasa-water-satellite-layer', 'visibility') === 'visible');
+      if (lId === 'sat-clouds') return !!(mapInstance && mapInstance.getLayer('nasa-cloud-satellite-layer') && mapInstance.getLayoutProperty('nasa-cloud-satellite-layer', 'visibility') === 'visible');
+      if (lId === 'wind-field') return !!(windFieldLayer && windFieldLayer.canvas && windFieldLayer.canvas.style.display !== 'none');
+      if (lId === 'traffic') return !!(mapInstance && mapInstance.getLayer('layer-traffic') && mapInstance.getLayoutProperty('layer-traffic', 'visibility') === 'visible');
+      if (lId === 'dmr-geology') return isGeologyActive();
+      if (lId === 'dams') return !!(mapInstance && mapInstance.getLayer('layer-dams-circle') && mapInstance.getLayoutProperty('layer-dams-circle', 'visibility') === 'visible');
+      if (lId === 'bma-roads') return !!(mapInstance && mapInstance.getLayer('layer-bma-roads-line') && mapInstance.getLayoutProperty('layer-bma-roads-line', 'visibility') === 'visible');
+      if (lId === 'traffy-flood') return isTraffyFloodVisible;
+      return false;
+    };
 
-      if (labelSpan) {
-        if (gfsOn && ecmwfOn) {
-          labelSpan.innerHTML = `<span>🇺🇸 GFS & 🇪🇺 ECMWF:</span> <span id="ecmwf-float-date" style="color: #4f46e5; font-weight:700;">${dateStr}</span>`;
-        } else if (gfsOn) {
-          labelSpan.innerHTML = `<span>🇺🇸 <b>GFS (NOAA):</b></span> <span id="ecmwf-float-date" style="color: #0284c7; font-weight:700;">${dateStr}</span>`;
-        } else {
-          labelSpan.innerHTML = `<span>🇪🇺 <b>ECMWF IFS:</b></span> <span id="ecmwf-float-date" style="color: #4f46e5; font-weight:700;">${dateStr}</span>`;
-        }
-      }
+    const validActive = Object.keys(LAYER_LEGEND_CONFIGS).filter(isLayerOn);
 
-      floatBar.querySelectorAll('.float-chip').forEach((c) => {
-        const d = parseInt(c.getAttribute('data-day'), 10);
-        c.classList.toggle('active', d === activeDay);
-      });
-    } else {
+    if (validActive.length === 0) {
       floatBar.style.display = 'none';
+      return;
     }
+
+    floatBar.style.display = 'flex';
+
+    if (!validActive.includes(currentActiveLegendId)) {
+      currentActiveLegendId = validActive[0];
+    }
+
+    const conf = LAYER_LEGEND_CONFIGS[currentActiveLegendId] || LAYER_LEGEND_CONFIGS[validActive[0]];
+
+    // 1. Render tabs
+    const tabsWrapper = floatBar.querySelector('#legend-tabs-wrapper');
+    if (tabsWrapper) {
+      if (validActive.length > 1) {
+        tabsWrapper.innerHTML = validActive.map((lId) => {
+          const c = LAYER_LEGEND_CONFIGS[lId];
+          const isActive = lId === currentActiveLegendId;
+          return `<button class="legend-tab-btn ${isActive ? 'active' : ''}" data-layer-id="${lId}" type="button">${c.shortName || c.name}</button>`;
+        }).join('');
+        tabsWrapper.querySelectorAll('.legend-tab-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            currentActiveLegendId = btn.getAttribute('data-layer-id');
+            updateBottomLegendBar();
+          });
+        });
+      } else {
+        tabsWrapper.innerHTML = `<div class="legend-single-title">${conf.icon} <b>${conf.name}</b></div>`;
+      }
+    }
+
+    // 2. Day selector section (strictly displayed ONLY for forecast layers with hasDaySelector)
+    const daySection = floatBar.querySelector('#legend-day-section');
+    if (daySection) {
+      if (conf && conf.hasDaySelector) {
+        daySection.style.display = 'flex';
+        daySection.classList.remove('is-hidden');
+        daySection.removeAttribute('hidden');
+        const activeDay = conf.modelCode === 'GFS' ? currentGFSDay : currentECMWFDay;
+        const f = cachedNWPData && cachedNWPData[0]?.dailyForecasts[activeDay];
+        const dateStr = f ? `${f.displayDate} (${f.dayLabel})` : 'วันนี้';
+
+        const titleEl = floatBar.querySelector('#ecmwf-float-title');
+        if (titleEl) {
+          titleEl.innerHTML = conf.modelCode === 'GFS' ? '🇺🇸 <b>GFS (NOAA):</b>' : '🇪🇺 <b>ECMWF IFS:</b>';
+        }
+        const dateEl = floatBar.querySelector('#ecmwf-float-date');
+        if (dateEl) {
+          dateEl.textContent = dateStr;
+          dateEl.style.color = conf.modelCode === 'GFS' ? '#0284c7' : '#4f46e5';
+        }
+
+        daySection.querySelectorAll('.float-chip').forEach((c) => {
+          const d = parseInt(c.getAttribute('data-day'), 10);
+          c.classList.toggle('active', d === activeDay);
+        });
+      } else {
+        daySection.style.display = 'none';
+        daySection.classList.add('is-hidden');
+        daySection.setAttribute('hidden', '');
+      }
+    }
+
+    // 3. Color scale section
+    const scaleSection = floatBar.querySelector('#legend-scale-section');
+    if (scaleSection) {
+      if (conf.colorScale.type === 'gradient') {
+        scaleSection.innerHTML = `
+          <div class="legend-scale-bar-wrap">
+            <div class="legend-scale-gradient" style="background: ${conf.colorScale.gradient};"></div>
+            <div class="legend-scale-labels">
+              ${conf.colorScale.labels.map((lbl) => `<span>${lbl}</span>`).join('')}
+            </div>
+          </div>
+        `;
+      } else if (conf.colorScale.type === 'chips') {
+        scaleSection.innerHTML = `
+          <div class="legend-chips-wrap">
+            ${conf.colorScale.items.map((it) => `
+              <div class="legend-chip-item">
+                <span class="legend-color-dot" style="background: ${it.color};"></span>
+                <span class="legend-chip-label">${it.label}</span>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+    }
+
+    // 4. Description section
+    const descText = floatBar.querySelector('#bottom-legend-desc-text');
+    if (descText) {
+      descText.textContent = conf.description;
+    }
+  }
+
+  function updateNWPFloatBar() {
+    updateBottomLegendBar();
   }
 
   async function initNWPForecastLayers() {
@@ -2084,11 +2410,157 @@ export function createMapViewer(options) {
         mapInstance.getCanvas().style.cursor = '';
       });
     });
+    activeLegendLayers.add('bma-roads');
+    updateBottomLegendBar();
+  }
+
+  // =========================================================================
+  // Traffy Fondue Road Flood Incidents Layer (Minimalist Road Icon)
+  // =========================================================================
+  const traffyFloodMarkers = [];
+  let traffyFloodGeoJSON = null;
+  let isTraffyFloodVisible = true;
+
+  function showTraffyPopup(p, lngLat) {
+    if (currentStationPopup) {
+      currentStationPopup.remove();
+      currentStationPopup = null;
+    }
+
+    const popupHtml = `
+      <div class="traffy-popup-card">
+        <div class="traffy-popup-header">
+          <div class="traffy-header-title">
+            <span class="traffy-badge-icon">🛣️</span>
+            <div>
+              <div class="traffy-title">รายงานน้ำท่วม Traffy Fondue</div>
+              <div class="traffy-ticket">รหัสแจ้ง: ${p.ticket_id}</div>
+            </div>
+          </div>
+          <span class="traffy-state-pill ${p.stateClass}">${p.state}</span>
+        </div>
+        <div class="traffy-popup-body">
+          <div class="traffy-desc">${p.description}</div>
+          <div class="traffy-meta">
+            <div>📍 <b>สถานที่:</b> ${p.address}</div>
+            <div>🕒 <b>เวลาที่แจ้ง:</b> ${p.formattedTime || p.timestamp}</div>
+          </div>
+          ${p.photo_url ? `<div class="traffy-photo-wrap"><img src="${p.photo_url}" class="traffy-photo" alt="ภาพถ่ายจุดน้ำท่วม" loading="lazy" /></div>` : ''}
+        </div>
+        <div class="traffy-popup-footer">
+          <a href="${p.traffy_url}" target="_blank" rel="noopener noreferrer" class="btn-traffy-link">
+            ดูบน Traffy Fondue ↗
+          </a>
+          <a href="${p.line_url || 'https://line.me/R/ti/p/@traffyfondue'}" target="_blank" rel="noopener noreferrer" class="btn-traffy-line">
+            แจ้งเหตุเพิ่มเติม 💬
+          </a>
+        </div>
+      </div>
+    `;
+
+    currentStationPopup = new maplibregl.Popup({
+      closeButton: true,
+      closeOnClick: false,
+      offset: 14,
+      className: 'gmaps-telemetry-popup'
+    })
+      .setLngLat(lngLat)
+      .setHTML(popupHtml)
+      .addTo(mapInstance);
+  }
+
+  function renderTraffyFloodMarkers(geo) {
+    traffyFloodMarkers.forEach((m) => m.remove());
+    traffyFloodMarkers.length = 0;
+
+    if (!geo || !geo.features || !isTraffyFloodVisible) return;
+
+    geo.features.forEach((feature) => {
+      const p = feature.properties;
+      const coords = feature.geometry.coordinates;
+      if (!coords || isNaN(coords[0]) || isNaN(coords[1])) return;
+
+      const el = document.createElement('div');
+      el.className = `traffy-road-marker-pin ${p.stateClass}`;
+      el.setAttribute('data-ticket', p.ticket_id);
+      el.title = `[Traffy Fondue] ${p.address} - ${p.state}: ${p.description}`;
+      el.innerHTML = `
+        <div class="traffy-pin-inner">
+          <svg class="traffy-road-svg" viewBox="0 0 24 24" width="28" height="28" fill="none">
+            <circle cx="12" cy="12" r="11" fill="#0f172a" stroke="#ffffff" stroke-width="2"/>
+            <path d="M7 19L10 5H14L17 19H7Z" fill="#334155" stroke="#cbd5e1" stroke-width="1.2" stroke-linejoin="round"/>
+            <line x1="12" y1="6" x2="12" y2="8.5" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="12" y1="11" x2="12" y2="13.5" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+            <line x1="12" y1="16" x2="12" y2="18.5" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <span class="traffy-status-badge ${p.stateClass}"></span>
+        </div>
+      `;
+
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (currentStationPopup) {
+          currentStationPopup.remove();
+          currentStationPopup = null;
+        }
+        if (options.onStationSelect) {
+          options.onStationSelect({
+            ...p,
+            isTraffy: true,
+            lat: coords[1],
+            lng: coords[0],
+            province: 'กรุงเทพมหานคร'
+          });
+        }
+      });
+
+      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+        .setLngLat(coords)
+        .addTo(mapInstance);
+
+      traffyFloodMarkers.push(marker);
+    });
+  }
+
+  async function initTraffyFloodLayer() {
+    try {
+      traffyFloodGeoJSON = await getTraffyFloodGeoJSON();
+      if (isTraffyFloodVisible) {
+        renderTraffyFloodMarkers(traffyFloodGeoJSON);
+        activeLegendLayers.add('traffy-flood');
+        updateBottomLegendBar();
+      }
+    } catch (err) {
+      console.error('Failed to load Traffy Fondue Flood data:', err);
+    }
+  }
+
+  function setTraffyFloodVisibility(visible) {
+    isTraffyFloodVisible = visible;
+    if (visible) {
+      if (traffyFloodGeoJSON) {
+        renderTraffyFloodMarkers(traffyFloodGeoJSON);
+      } else {
+        initTraffyFloodLayer();
+      }
+      activeLegendLayers.add('traffy-flood');
+    } else {
+      traffyFloodMarkers.forEach((m) => m.remove());
+      traffyFloodMarkers.length = 0;
+      activeLegendLayers.delete('traffy-flood');
+    }
+    updateBottomLegendBar();
   }
 
   function setLayerVisibility(layerId, isVisible) {
     if (!mapInstance) return;
     const vis = isVisible ? 'visible' : 'none';
+
+    if (isVisible && LAYER_LEGEND_CONFIGS[layerId]) {
+      currentActiveLegendId = layerId;
+    } else if (!isVisible && currentActiveLegendId === layerId) {
+      currentActiveLegendId = null;
+    }
 
     if (layerId === 'flood-now') {
       if (mapInstance.getLayer('layer-flood-now-fill')) mapInstance.setLayoutProperty('layer-flood-now-fill', 'visibility', vis);
@@ -2110,6 +2582,8 @@ export function createMapViewer(options) {
       damMarkers.forEach((m) => {
         m.getElement().style.display = isVisible ? 'flex' : 'none';
       });
+      if (isVisible) activeLegendLayers.add('dams'); else activeLegendLayers.delete('dams');
+      updateBottomLegendBar();
     } else if (layerId === 'traffic') {
       if (mapInstance.getLayer('layer-traffic')) {
         mapInstance.setLayoutProperty('layer-traffic', 'visibility', vis);
@@ -2117,11 +2591,15 @@ export function createMapViewer(options) {
           showToast('ชั้นข้อมูลการจราจรจะแสดงผลเมื่อซูมระดับ 13 ขึ้นไป (ระดับถนน/ชุมชน)', '🚦');
         }
       }
+      if (isVisible) activeLegendLayers.add('traffic'); else activeLegendLayers.delete('traffic');
+      updateBottomLegendBar();
     } else if (layerId === 'dmr-geology') {
       if (mapInstance.getLayer('dmr-geology-layer')) mapInstance.setLayoutProperty('dmr-geology-layer', 'visibility', vis);
       if (mapInstance.getLayer('dmr-structures-layer')) mapInstance.setLayoutProperty('dmr-structures-layer', 'visibility', vis);
       const legGeol = document.querySelector('#legend-dmr-geology');
-      if (legGeol) legGeol.style.display = isVisible ? 'block' : 'none';
+      if (legGeol) legGeol.style.display = 'none';
+      if (isVisible) activeLegendLayers.add('dmr-geology'); else activeLegendLayers.delete('dmr-geology');
+      updateBottomLegendBar();
     } else if (layerId === 'stations') {
       if (mapInstance.getLayer('layer-stations-glow')) mapInstance.setLayoutProperty('layer-stations-glow', 'visibility', vis);
       if (mapInstance.getLayer('layer-stations-circle')) mapInstance.setLayoutProperty('layer-stations-circle', 'visibility', vis);
@@ -2133,6 +2611,8 @@ export function createMapViewer(options) {
           refreshRadarTiles();
         }
       }
+      if (isVisible) activeLegendLayers.add('sat-water'); else activeLegendLayers.delete('sat-water');
+      updateBottomLegendBar();
     } else if (layerId === 'sat-clouds') {
       if (mapInstance.getLayer('nasa-cloud-satellite-layer')) {
         mapInstance.setLayoutProperty('nasa-cloud-satellite-layer', 'visibility', vis);
@@ -2140,13 +2620,17 @@ export function createMapViewer(options) {
           refreshCloudTiles();
         }
       }
+      if (isVisible) activeLegendLayers.add('sat-clouds'); else activeLegendLayers.delete('sat-clouds');
+      updateBottomLegendBar();
     } else if (layerId === 'gfs') {
       if (mapInstance.getLayer('layer-gfs-fill')) mapInstance.setLayoutProperty('layer-gfs-fill', 'visibility', vis);
       if (mapInstance.getLayer('layer-gfs-stroke')) mapInstance.setLayoutProperty('layer-gfs-stroke', 'visibility', vis);
+      if (isVisible) activeLegendLayers.add('gfs'); else activeLegendLayers.delete('gfs');
       updateNWPFloatBar();
     } else if (layerId === 'ecmwf') {
       if (mapInstance.getLayer('layer-ecmwf-fill')) mapInstance.setLayoutProperty('layer-ecmwf-fill', 'visibility', vis);
       if (mapInstance.getLayer('layer-ecmwf-stroke')) mapInstance.setLayoutProperty('layer-ecmwf-stroke', 'visibility', vis);
+      if (isVisible) activeLegendLayers.add('ecmwf'); else activeLegendLayers.delete('ecmwf');
       updateNWPFloatBar();
     } else if (layerId === 'bma-roads') {
       if (mapInstance.getLayer('layer-bma-roads-glow')) mapInstance.setLayoutProperty('layer-bma-roads-glow', 'visibility', vis);
@@ -2161,32 +2645,98 @@ export function createMapViewer(options) {
           mapInstance.flyTo({ center: [100.56, 13.78], zoom: 11.4, speed: 1.2 });
         }
       }
+      if (isVisible) activeLegendLayers.add('bma-roads'); else activeLegendLayers.delete('bma-roads');
+      updateBottomLegendBar();
+    } else if (layerId === 'traffy-flood') {
+      setTraffyFloodVisibility(isVisible);
+      if (isVisible) {
+        currentActiveLegendId = 'traffy-flood';
+        showToast('เปิดเลเยอร์น้ำท่วมขัง Traffy Fondue', '🛣️');
+        const center = mapInstance.getCenter();
+        const zoom = mapInstance.getZoom();
+        if (zoom < 9.5 || Math.abs(center.lat - 13.75) > 1.2 || Math.abs(center.lng - 100.5) > 1.2) {
+          mapInstance.flyTo({ center: [100.56, 13.78], zoom: 11.4, speed: 1.2 });
+        }
+      }
+      updateBottomLegendBar();
     } else if (layerId === 'wind-field') {
       if (windFieldLayer) {
         windFieldLayer.setVisible(isVisible);
       }
       const legWind = container.querySelector('#gmaps-wind-legend');
-      if (legWind) legWind.style.display = isVisible ? 'block' : 'none';
+      if (legWind) legWind.style.display = 'none';
       if (isVisible) {
+        activeLegendLayers.add('wind-field');
         showToast('เปิดเลเยอร์กระแสลมผิวพื้น 10 ม. (Wind Field Map)', '💨');
+      } else {
+        activeLegendLayers.delete('wind-field');
       }
+      updateBottomLegendBar();
     }
+  }
+
+  function showLocationPopup(item, lngLat) {
+    if (currentStationPopup) {
+      currentStationPopup.remove();
+      currentStationPopup = null;
+    }
+
+    if (options.onStationSelect) {
+      options.onStationSelect(item);
+    }
+
+    const popupHtml = `
+      <div style="font-family: var(--font-thai); padding: 4px 6px; min-width: 170px;">
+        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+          <span style="font-size: 18px;">${item.icon || '📍'}</span>
+          <div style="font-weight: 700; font-size: 13.5px; color: #1e293b;">${item.name}</div>
+        </div>
+        <div style="font-size: 11.5px; color: #64748b; margin-bottom: 6px;">${item.subtitle || ''}</div>
+        <div style="font-size: 11px; color: #1a73e8; background: #eff6ff; padding: 2px 6px; border-radius: 4px; display: inline-block; font-weight: 600;">
+          ${item.typeLabel || 'ตำแหน่งที่ค้นหา'}
+        </div>
+      </div>
+    `;
+
+    currentStationPopup = new maplibregl.Popup({
+      closeButton: true,
+      closeOnClick: false,
+      offset: 14,
+      className: 'gmaps-telemetry-popup'
+    })
+      .setLngLat(lngLat)
+      .setHTML(popupHtml)
+      .addTo(mapInstance);
   }
 
   function flyToStation(item) {
     if (!mapInstance || !item) return;
-    const lng = parseFloat(item.lng);
+    const lng = parseFloat(item.lng || item.lon);
     const lat = parseFloat(item.lat);
     if (isNaN(lng) || isNaN(lat)) return;
 
+    let targetZoom = 12;
+    if (item.isDam) targetZoom = 11;
+    else if (item.isProvince) targetZoom = 9.5;
+    else if (item.isAmphoe) targetZoom = 12;
+    else if (item.isTambon) targetZoom = 13.5;
+    else if (item.zoom) targetZoom = item.zoom;
+
     mapInstance.flyTo({
       center: [lng, lat],
-      zoom: item.isDam ? 11 : 12,
+      zoom: targetZoom,
       speed: 1.4,
       curve: 1.2
     });
     if (item.isDam) {
       showDamPopup(item, [lng, lat]);
+    } else if (item.isLocation) {
+      showLocationPopup(item, [lng, lat]);
+    } else if (item.isTraffy || item.isRoad) {
+      if (currentStationPopup) {
+        currentStationPopup.remove();
+        currentStationPopup = null;
+      }
     } else {
       showStationPopup(item, [lng, lat]);
     }

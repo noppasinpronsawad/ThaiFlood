@@ -71,6 +71,8 @@ async function initApp() {
             placeSheetInstance.selectDam(item);
           } else if (item.isRoad) {
             placeSheetInstance.selectRoad(item);
+          } else if (item.isTraffy) {
+            placeSheetInstance.selectTraffy(item);
           } else if (item.isUserLocation) {
             placeSheetInstance.selectUserLocation(item);
           } else if (item.isDedicatedWeather) {
@@ -108,6 +110,14 @@ async function initApp() {
             placeSheetInstance.selectDam(item);
           } else if (item.isRoad) {
             placeSheetInstance.selectRoad(item);
+          } else if (item.isTraffy) {
+            placeSheetInstance.selectTraffy(item);
+          } else if (item.isLocation) {
+            placeSheetInstance.selectGeneric({
+              ...item,
+              desc: item.subtitle,
+              riskTag: item.typeLabel || 'ตำแหน่งที่ค้นหา'
+            });
           } else {
             placeSheetInstance.selectStation(item);
           }
