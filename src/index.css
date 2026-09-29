@@ -777,7 +777,7 @@ html, body {
   position: absolute;
   bottom: 24px;
   right: 20px;
-  z-index: 20;
+  z-index: 60 !important;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -800,7 +800,7 @@ html, body {
   position: absolute;
   bottom: 24px;
   right: 20px;
-  z-index: 20;
+  z-index: 60 !important;
   background: #ffffff;
   border-radius: 4px;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
@@ -839,7 +839,7 @@ html, body {
   position: absolute;
   bottom: 24px;
   left: 20px;
-  z-index: 32;
+  z-index: 60 !important;
   font-family: var(--font-thai);
   user-select: none;
   animation: fadeIn 0.25s ease-out;
@@ -1817,6 +1817,7 @@ html, body {
     max-width: none;
     box-sizing: border-box;
     overflow: visible;
+    z-index: 60 !important;
   }
 
   .gmaps-basemap-trigger #basemap-active-thumb {
@@ -1897,6 +1898,7 @@ html, body {
     bottom: calc(24px + env(safe-area-inset-bottom, 8px));
     right: 12px;
     gap: 6px;
+    z-index: 60 !important;
   }
 
   .gmaps-zoom-btn {
@@ -2087,6 +2089,7 @@ html, body {
     bottom: calc(20px + env(safe-area-inset-bottom, 6px));
     left: 8px;
     padding: 0;
+    z-index: 60 !important;
   }
   .gmaps-basemap-trigger #basemap-active-thumb {
     width: 42px;
@@ -2111,6 +2114,7 @@ html, body {
   .gmaps-controls-stack {
     bottom: calc(20px + env(safe-area-inset-bottom, 6px));
     right: 8px;
+    z-index: 60 !important;
   }
   .gmaps-bottom-legend-card,
   .gmaps-ecmwf-float-bar {
@@ -2617,6 +2621,15 @@ html, body {
   display: block;
 }
 
+.traffy-fondue-pin-logo {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: block;
+  object-fit: cover;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
 .traffy-status-badge {
   position: absolute;
   top: -1px;
@@ -2637,7 +2650,7 @@ html, body {
   box-shadow: 0 0 6px rgba(16, 185, 129, 0.85);
 }
 
-/* DOH National Highway Flood Emblem Pin (Requirement 2: สัญลักษณ์กรมทางหลวง) */
+/* DOH National Highway Flood Pin */
 .doh-highway-marker-pin {
   cursor: pointer;
   pointer-events: auto !important;
@@ -2658,6 +2671,31 @@ html, body {
   border-radius: 8px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45), 0 0 10px rgba(56, 189, 248, 0.35);
   transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease;
+}
+
+.doh-shield-card.passable {
+  border-color: #ea580c;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45), 0 0 10px rgba(234, 88, 12, 0.35);
+}
+
+.doh-shield-card.impassable {
+  border-color: #dc2626;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45), 0 0 10px rgba(220, 38, 38, 0.5);
+}
+
+.doh-shield-card.passable .doh-shield-arrow-down {
+  border-top-color: #ea580c;
+}
+
+.doh-shield-card.impassable .doh-shield-arrow-down {
+  border-top-color: #dc2626;
+}
+
+.doh-road-icon {
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+  display: block;
 }
 
 .doh-highway-marker-pin:hover .doh-shield-card {

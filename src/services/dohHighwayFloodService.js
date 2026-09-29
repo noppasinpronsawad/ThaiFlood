@@ -7,7 +7,7 @@
 
 import dohRoadAlignments from '../data/dohRoadAlignments.json' with { type: 'json' };
 
-const DOH_CACHE_KEY = 'thaiflood_doh_live_cache_v3';
+const DOH_CACHE_KEY = 'thaiflood_doh_live_cache_v4';
 const DOH_CACHE_TTL_MS = 10 * 60 * 1000; // 10 mins
 
 /**
@@ -62,15 +62,37 @@ export async function getDohHighwayGeoJSON() {
       throw new Error('DOH HDMS API returned non-array payload');
     }
 
-    // Filter strictly for authentic flood / inundation incidents
-    const floods = rawList.filter((d) =>
-      d && (
-        d.incident_type_id === 1 ||
+    // Filter strictly for active authentic flood / inundation incidents
+    // Excludes resolved incidents (stamped with end_date or water receded to 0 cm)
+    const floods = rawList.filter((d) => {
+      if (!d) return false;
+      const isFloodType = d.incident_type_id === 1 ||
         d.incident_type_text === 'อุทกภัย' ||
         (d.case_name && d.case_name.includes('น้ำท่วม')) ||
-        (d.case_name && d.case_name.includes('นำ้ท่วม'))
-      )
-    );
+        (d.case_name && d.case_name.includes('นำ้ท่วม'));
+      if (!isFloodType) return false;
+
+      // 1. Check end_date (if end_date or end_date_text is present, the incident has ended)
+      const hasEndDate = !!((d.end_date && String(d.end_date).trim()) || (d.end_date_text && String(d.end_date_text).trim()));
+      if (hasEndDate) return false;
+
+      // 2. Parse flood depth in cm (if explicitly 0 cm or water receded, exclude)
+      let waterDepthCm = 15;
+      if (d.flood_level !== undefined && d.flood_level !== null) {
+        const strVal = String(d.flood_level).trim();
+        if (strVal === '0') return false;
+        const matches = strVal.match(/(\d+)/g);
+        if (matches && matches.length > 0) {
+          const nums = matches.map(Number).filter((n) => !isNaN(n));
+          if (nums.length > 0) {
+            waterDepthCm = Math.max(...nums);
+          }
+        }
+      }
+      if (waterDepthCm <= 0) return false;
+
+      return true;
+    });
 
     const features = floods.map((d, idx) => {
       const lat = parseFloat(d.latitude);
@@ -153,6 +175,8 @@ export async function getDohHighwayGeoJSON() {
           cause: d.cause_of_accident || d.incident_type_text || 'น้ำท่วมขังบนผิวจราจร',
           detour: d.bypass_desc || d.initial_relief || 'เจ้าหน้าที่อำนวยความสะดวก โปรดตรวจสอบเส้นทางก่อนสัญจร',
           reportedTime: d.start_date_text || d.report_date_text || 'ล่าสุด',
+          endDate: d.end_date || null,
+          endDateText: d.end_date_text || '',
           agency: d.depot_name ? `${d.depot_name} (${d.district_name || 'กรมทางหลวง'})` : 'กรมทางหลวง (DOH)',
           hotline: 'สายด่วนกรมทางหลวง 1586 (โทรฟรีตลอด 24 ชม.)'
         },

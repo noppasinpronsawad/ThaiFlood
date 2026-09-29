@@ -14,6 +14,7 @@ import { getDohHighwayGeoJSON } from '../services/dohHighwayFloodService.js';
 import { createWindFieldLayer } from './WindFieldLayer.js';
 import { evaluateDamRuleCurve } from '../services/damRuleCurveService.js';
 import { getTraffyFloodGeoJSON } from '../services/traffyFondueService.js';
+import traffyLogoImg from '../assets/images/traffy-fondue-logo.png';
 
 export function createMapViewer(options) {
   const { basinsData, floodNowData, forecast7dData, stationsData, damsData = [], dohRoadsData: initialDohRoadsData = null, onStationSelect } = options;
@@ -2475,9 +2476,9 @@ export function createMapViewer(options) {
       }
     }
 
-    // Filter to show ONLY flooded highways (waterDepthCm > 0)
+    // Filter to show ONLY active flooded highways (waterDepthCm > 0 and no end_date)
     const floodedFeatures = (dohFloodData?.features || []).filter(
-      (f) => f.properties && f.properties.waterDepthCm > 0
+      (f) => f.properties && f.properties.waterDepthCm > 0 && !f.properties.endDate && !f.properties.endDateText
     );
     const filteredDohData = {
       ...(dohFloodData || { type: 'FeatureCollection' }),
@@ -2577,16 +2578,19 @@ export function createMapViewer(options) {
       const statusText = isPassable
         ? `⚠️ ท่วม ${p.waterDepthCm} ซม.`
         : `⛔ ผ่านไม่ได้ (${p.waterDepthCm} ซม.)`;
+      const passColor = isPassable ? '#ea580c' : '#dc2626';
+      const passBorder = isPassable ? '#f59e0b' : '#ef4444';
+      const cardClass = isPassable ? 'passable' : 'impassable';
 
       el.innerHTML = `
-        <div class="doh-shield-card">
+        <div class="doh-shield-card ${cardClass}">
           <div class="doh-shield-header">
-            <svg class="doh-crest-svg" viewBox="0 0 24 24" fill="none">
-              <!-- Official DOH Milestone Shield Emblem -->
-              <path d="M12 2L4 5V12C4 16.5 7.5 20.5 12 22C16.5 20.5 20 16.5 20 12V5L12 2Z" fill="#0369a1" stroke="#38bdf8" stroke-width="1.4"/>
-              <path d="M9 17L11 9H13L15 17H9Z" fill="#ffffff"/>
-              <line x1="12" y1="11" x2="12" y2="13" stroke="#0369a1" stroke-width="1.2"/>
-              <line x1="12" y1="14.5" x2="12" y2="16.5" stroke="#0369a1" stroke-width="1.2"/>
+            <svg class="traffy-road-svg doh-road-icon" viewBox="0 0 24 24" width="19" height="19" fill="none">
+              <circle cx="12" cy="12" r="10.5" fill="${passColor}" stroke="${passBorder}" stroke-width="2"/>
+              <path d="M7 18.5L9.5 5.5H14.5L17 18.5H7Z" fill="#0f172a" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round"/>
+              <line x1="12" y1="6.5" x2="12" y2="9" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+              <line x1="12" y1="11" x2="12" y2="13.5" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+              <line x1="12" y1="15.5" x2="12" y2="18" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
             <span class="doh-route-label">${p.highwayNo}</span>
           </div>
@@ -2743,13 +2747,7 @@ export function createMapViewer(options) {
       el.title = `[Traffy Fondue] ${p.address} - ${p.state}: ${p.description}`;
       el.innerHTML = `
         <div class="traffy-pin-inner">
-          <svg class="traffy-road-svg" viewBox="0 0 24 24" width="28" height="28" fill="none">
-            <circle cx="12" cy="12" r="11" fill="#0f172a" stroke="#ffffff" stroke-width="2"/>
-            <path d="M7 19L10 5H14L17 19H7Z" fill="#334155" stroke="#cbd5e1" stroke-width="1.2" stroke-linejoin="round"/>
-            <line x1="12" y1="6" x2="12" y2="8.5" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
-            <line x1="12" y1="11" x2="12" y2="13.5" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
-            <line x1="12" y1="16" x2="12" y2="18.5" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
+          <img src="${traffyLogoImg}" class="traffy-fondue-pin-logo" alt="Traffy Fondue" width="28" height="28" />
           <span class="traffy-status-badge ${p.stateClass}"></span>
         </div>
       `;
