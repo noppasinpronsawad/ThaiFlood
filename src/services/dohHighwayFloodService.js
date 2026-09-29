@@ -1,21 +1,27 @@
 /**
  * DOH Highway Flood Service for ThaiFlood
- * Fetches real-time flood reports on the National Highway Network from
- * Department of Highways (DOH Disaster Management System / Data.go.th)
- * Hotline: 1586
+ * Fetches 100% Real Live Highway Disaster & Flood Data from Department of Highways
+ * System: DOH Disaster Management System (HDMS) API
+ * Hotline: สายด่วนกรมทางหลวง 1586 (โทรฟรีตลอด 24 ชม.)
  */
-import dohFloodData from '../data/dohFloodHighways.json' with { type: 'json' };
 
-const DOH_CACHE_KEY = 'thaiflood_doh_cache_v1';
-const DOH_CACHE_TTL_MS = 15 * 60 * 1000; // 15 mins
+const DOH_CACHE_KEY = 'thaiflood_doh_live_cache_v2';
+const DOH_CACHE_TTL_MS = 10 * 60 * 1000; // 10 mins
 
+/**
+ * Fetch real-time flood reports directly from DOH HDMS live API
+ * @returns {Promise<GeoJSON.FeatureCollection>}
+ */
 export async function getDohHighwayGeoJSON() {
+  const now = new Date();
+
+  // 1. Check local client cache
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
       const cached = localStorage.getItem(DOH_CACHE_KEY);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (parsed.timestamp && Date.now() - parsed.timestamp < DOH_CACHE_TTL_MS && parsed.data) {
+        if (parsed.timestamp && (Date.now() - parsed.timestamp < DOH_CACHE_TTL_MS) && parsed.data) {
           return parsed.data;
         }
       }
@@ -24,23 +30,168 @@ export async function getDohHighwayGeoJSON() {
     }
   }
 
-  // Live DOH endpoint or fallback dataset
-  const data = dohFloodData;
+  // 2. Build dynamic 30-day date range for HDMS API
+  const end = now.toISOString().split('T')[0];
+  const startDate = new Date(now);
+  startDate.setDate(now.getDate() - 30);
+  const start = startDate.toISOString().split('T')[0];
 
-  if (typeof window !== 'undefined' && window.localStorage && data) {
-    try {
-      localStorage.setItem(DOH_CACHE_KEY, JSON.stringify({
-        timestamp: Date.now(),
-        data
-      }));
-    } catch {}
+  const url = `https://hdms.doh.go.th/internal-api/public/dashboard?start=${start}&end=${end}`;
+
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    const res = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      throw new Error(`DOH HDMS API error HTTP ${res.status}`);
+    }
+
+    const rawList = await res.json();
+    if (!Array.isArray(rawList)) {
+      throw new Error('DOH HDMS API returned non-array payload');
+    }
+
+    // Filter strictly for authentic flood / inundation incidents
+    const floods = rawList.filter((d) =>
+      d && (
+        d.incident_type_id === 1 ||
+        d.incident_type_text === 'อุทกภัย' ||
+        (d.case_name && d.case_name.includes('น้ำท่วม')) ||
+        (d.case_name && d.case_name.includes('นำ้ท่วม'))
+      )
+    );
+
+    const features = floods.map((d, idx) => {
+      const lat = parseFloat(d.latitude);
+      const lng = parseFloat(d.longitude);
+      if (isNaN(lat) || isNaN(lng) || lat < 5 || lat > 21 || lng < 97 || lng > 106) {
+        return null;
+      }
+
+      // Parse flood depth in cm
+      let waterDepthCm = 15;
+      if (d.flood_level) {
+        const matches = String(d.flood_level).match(/(\d+)/g);
+        if (matches && matches.length > 0) {
+          const nums = matches.map(Number).filter((n) => !isNaN(n));
+          if (nums.length > 0) {
+            waterDepthCm = Math.max(...nums);
+          }
+        }
+      }
+
+      // If lane_closure is true, passability is blocked or restricted
+      const passable = !d.lane_closure;
+      const roadCodeStr = d.road_code ? String(d.road_code).trim() : '';
+      const highwayNo = roadCodeStr ? `ทล. ${parseInt(roadCodeStr, 10) || roadCodeStr}` : 'ทางหลวงแผ่นดิน';
+      const routeName = d.section_name || d.case_name || 'ช่วงสายทางหลวง';
+      const kmRange = (d.km_start || d.km_end)
+        ? `กม. ${d.km_start || ''} - กม. ${d.km_end || ''}`.trim()
+        : 'จุดตรวจการณ์ทางหลวง';
+
+      // Generate LineString geometry centered around the reported highway coordinate
+      const delta = 0.0035; // ~400m visual corridor
+      const lineCoords = [
+        [Number((lng - delta).toFixed(6)), Number((lat - delta * 0.25).toFixed(6))],
+        [Number(lng.toFixed(6)), Number(lat.toFixed(6))],
+        [Number((lng + delta).toFixed(6)), Number((lat + delta * 0.25).toFixed(6))]
+      ];
+
+      return {
+        type: 'Feature',
+        id: `doh-${d.case_id || d.gid || idx}`,
+        properties: {
+          id: `doh-${d.case_id || d.gid || idx}`,
+          caseId: d.case_id || String(d.gid || idx),
+          highwayNo,
+          routeName,
+          section: d.section_name ? `ช่วง${d.section_name}` : routeName,
+          kmRange,
+          province: d.province || 'ไม่ระบุ',
+          amphoe: d.amphoe || '',
+          tambon: d.tambon || '',
+          waterDepthCm,
+          passable,
+          statusLabel: passable ? 'ผ่านได้ (รถเล็กโปรดระมัดระวัง)' : 'ปิดการจราจร / รถเล็กผ่านไม่ได้',
+          severity: passable ? 'warning' : 'critical',
+          cause: d.cause_of_accident || d.incident_type_text || 'น้ำท่วมขังบนผิวจราจร',
+          detour: d.bypass_desc || d.initial_relief || 'เจ้าหน้าที่อำนวยความสะดวก โปรดตรวจสอบเส้นทางก่อนสัญจร',
+          reportedTime: d.start_date_text || d.report_date_text || 'ล่าสุด',
+          agency: d.depot_name ? `${d.depot_name} (${d.district_name || 'กรมทางหลวง'})` : 'กรมทางหลวง (DOH)',
+          hotline: 'สายด่วนกรมทางหลวง 1586 (โทรฟรีตลอด 24 ชม.)'
+        },
+        geometry: {
+          type: 'LineString',
+          coordinates: lineCoords
+        }
+      };
+    }).filter(Boolean);
+
+    const geoData = {
+      type: 'FeatureCollection',
+      metadata: {
+        agency: 'กรมทางหลวง (Department of Highways - DOH)',
+        system: 'DOH Disaster Management System (HDMS API)',
+        updatedAt: new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        hotline: 'สายด่วนกรมทางหลวง 1586 (โทรฟรีตลอด 24 ชม.)',
+        count: features.length
+      },
+      features
+    };
+
+    // Cache successful live response
+    if (typeof window !== 'undefined' && window.localStorage && features.length > 0) {
+      try {
+        localStorage.setItem(DOH_CACHE_KEY, JSON.stringify({
+          timestamp: Date.now(),
+          data: geoData
+        }));
+      } catch {
+        // quota exceeded
+      }
+    }
+
+    return geoData;
+  } catch (err) {
+    console.warn('DOH HDMS live fetch error, attempting cached fallback:', err.message);
+
+    // If fetch failed, return existing cached data if present
+    if (typeof window !== 'undefined' && window.localStorage) {
+      try {
+        const cached = localStorage.getItem(DOH_CACHE_KEY);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed.data) return parsed.data;
+        }
+      } catch {}
+    }
+
+    // STRICT: Absolutely NO mock data. Return empty FeatureCollection if API is down and no cache exists.
+    return {
+      type: 'FeatureCollection',
+      metadata: {
+        agency: 'กรมทางหลวง (Department of Highways - DOH)',
+        system: 'DOH Disaster Management System (HDMS API)',
+        updatedAt: 'ไม่สามารถเชื่อมต่อข้อมูลสดได้',
+        hotline: 'สายด่วนกรมทางหลวง 1586 (โทรฟรีตลอด 24 ชม.)',
+        count: 0
+      },
+      features: []
+    };
   }
-
-  return data;
 }
 
-export function getDohHighwaySummary() {
-  const features = dohFloodData?.features || [];
+export function getDohHighwaySummary(geoData = null) {
+  const features = geoData?.features || [];
   const total = features.length;
   const impassable = features.filter((f) => !f.properties.passable).length;
   const passable = total - impassable;
@@ -49,7 +200,7 @@ export function getDohHighwaySummary() {
     total,
     passable,
     impassable,
-    updatedAt: dohFloodData?.metadata?.updatedAt || 'ล่าสุด',
+    updatedAt: geoData?.metadata?.updatedAt || 'ล่าสุด',
     agency: 'กรมทางหลวง (DOH)'
   };
 }

@@ -6,10 +6,10 @@
 import './index.css';
 import basinsData from './data/thailandBasins.json';
 import riverReachesData from './data/riverReaches.js';
-import bmaRoadsData from './data/bmaFloodRoadLines.json';
-import dohFloodData from './data/dohFloodHighways.json';
 import { fetchLiveWaterStations } from './services/waterStationService.js';
 import { fetchLiveDams } from './services/damService.js';
+import { getDohHighwayGeoJSON } from './services/dohHighwayFloodService.js';
+import { fetchLiveBmaRoadFloodGeoJSON } from './services/bmaFloodRoadService.js';
 import { computeCurrentFloodPolygons, compute7DayRiskPolygons } from './services/floodRiskService.js';
 
 import { createNavbar } from './components/Navbar.js';
@@ -33,22 +33,28 @@ async function initApp() {
   appContainer.innerHTML = `
     <div id="live-data-loading" style="position: fixed; inset: 0; background: #ffffff; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: var(--font-thai);">
       <div style="font-size: 40px; margin-bottom: 12px; animation: gmaps-pulse 1.2s infinite ease-in-out;">🌊</div>
-      <div style="font-size: 16px; font-weight: 700; color: #1a73e8; margin-bottom: 6px;">กำลังเชื่อมต่อข้อมูลสดจากคลังข้อมูลน้ำแห่งชาติ (สสน.)</div>
-      <div style="font-size: 12.5px; color: #5f6368;">โหลดสถานีโทรมาตรวัดระดับน้ำ 1,400+ จุด และเขื่อนหลัก 50+ แห่งทั่วประเทศ...</div>
+      <div style="font-size: 16px; font-weight: 700; color: #1a73e8; margin-bottom: 6px;">กำลังเชื่อมต่อข้อมูลสดจากหน่วยงานภาครัฐ (สสน. / กรมทางหลวง / กทม.)</div>
+      <div style="font-size: 12.5px; color: #5f6368;">โหลดสถานีโทรมาตรน้ำ, เขื่อนหลัก, และจุดน้ำท่วมทางหลวงแบบ Real-Time...</div>
     </div>
   `;
 
   try {
-    // Fetch 100% real live telemetry data in parallel
+    // Fetch 100% real live telemetry data in parallel from official APIs
     let stationsData = [];
     let damsData = [];
+    let dohRoadsData = { type: 'FeatureCollection', features: [] };
+    let bmaRoadsData = { type: 'FeatureCollection', features: [] };
     try {
-      const [stations, dams] = await Promise.all([
+      const [stations, dams, dohRoads, bmaRoads] = await Promise.all([
         fetchLiveWaterStations(),
-        fetchLiveDams()
+        fetchLiveDams(),
+        getDohHighwayGeoJSON(),
+        fetchLiveBmaRoadFloodGeoJSON()
       ]);
       stationsData = stations || [];
       damsData = dams || [];
+      dohRoadsData = dohRoads || { type: 'FeatureCollection', features: [] };
+      bmaRoadsData = bmaRoads || { type: 'FeatureCollection', features: [] };
     } catch (err) {
       console.error('Failed to load live data:', err);
     }
@@ -75,6 +81,7 @@ async function initApp() {
       forecast7dData,
       stationsData,
       damsData,
+      dohRoadsData,
       onStationSelect: (item) => {
         if (placeSheetInstance) {
           if (item.isDam) {
@@ -121,7 +128,7 @@ async function initApp() {
       stations: stationsData,
       dams: damsData,
       bmaRoads: bmaRoadsData,
-      dohRoads: dohFloodData,
+      dohRoads: dohRoadsData,
       onSearchSelect: (item) => {
         mapViewer.flyToStation(item);
         if (placeSheetInstance) {

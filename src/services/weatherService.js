@@ -78,10 +78,9 @@ export async function fetch7DayWeatherForecast(locationKey = 'ayutthaya', custom
     forecastCache.set(cacheKey, { timestamp: now, data: formatted });
     return formatted;
   } catch (err) {
-    console.warn('Using offline realistic weather fallback:', err.message);
-    const fallback = getFallbackWeatherData(loc);
-    forecastCache.set(cacheKey, { timestamp: now, data: fallback });
-    return fallback;
+    console.error('Failed to fetch live weather forecast from Open-Meteo:', err.message);
+    // STRICT: ZERO MOCK DATA. Never fabricate rainfall or temperature values.
+    return null;
   }
 }
 
@@ -171,41 +170,7 @@ function formatWeatherData(data, loc) {
   };
 }
 
-function getFallbackWeatherData(loc) {
-  const today = new Date();
-  const days = [];
-  const rainProfile = [45.2, 58.0, 62.4, 38.5, 22.0, 15.4, 18.0];
 
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(today);
-    d.setDate(d.getDate() + i);
-    const rain = rainProfile[i];
-    const code = rain > 50 ? 95 : (rain > 30 ? 65 : 53);
-    const weatherInfo = getWeatherDescription(code);
-
-    days.push({
-      date: d.toISOString().split('T')[0],
-      displayDate: d.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' }),
-      weatherDesc: weatherInfo.text,
-      icon: weatherInfo.icon,
-      severity: weatherInfo.severity,
-      tempMax: 33,
-      tempMin: 25,
-      rainMm: rain,
-      rainProbPct: rain > 40 ? 85 : 60,
-      windSpeedKmH: 18
-    });
-  }
-
-  return {
-    locationName: loc.name,
-    lat: loc.lat,
-    lng: loc.lng,
-    source: 'Open-Meteo GFS (Pre-cached Offline Stream)',
-    total7DayRainMm: 259.5,
-    days
-  };
-}
 
 export { getWeatherDescription };
 
@@ -349,17 +314,9 @@ export async function fetchCurrentProvinceWeather(provinceName, lat = 13.7563, l
     currentProvinceWeatherCache.set(cacheKey, { timestamp: now, data });
     return data;
   } catch (err) {
-    console.warn(`Weather fallback for ${provinceName}:`, err.message);
-    const fallback = {
-      province: provinceName,
-      temp: 31,
-      weatherDesc: 'มีเมฆบางส่วน',
-      icon: '⛅',
-      rainProb: 30,
-      humidity: 72,
-      rainMm: 0
-    };
-    return fallback;
+    console.error(`Failed to fetch live weather for ${provinceName}:`, err.message);
+    // STRICT: ZERO MOCK DATA. Return null when API is unreachable.
+    return null;
   }
 }
 

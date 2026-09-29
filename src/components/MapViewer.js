@@ -10,13 +10,14 @@ import { buildDamGeoJSON } from '../services/damService.js';
 import { identifyRockUnit } from '../services/geologyService.js';
 import { getNearestProvince, fetchCurrentProvinceWeather } from '../services/weatherService.js';
 import { fetchNWPModelData, buildGFSGeoJSON, buildECMWFGeoJSON, getFallbackNWPData } from '../services/nwpForecastService.js';
-import dohFloodData from '../data/dohFloodHighways.json';
+import { getDohHighwayGeoJSON } from '../services/dohHighwayFloodService.js';
 import { createWindFieldLayer } from './WindFieldLayer.js';
 import { evaluateDamRuleCurve } from '../services/damRuleCurveService.js';
-import { getTraffyFloodGeoJSON, getSeedTraffyFloodGeoJSON } from '../services/traffyFondueService.js';
+import { getTraffyFloodGeoJSON } from '../services/traffyFondueService.js';
 
 export function createMapViewer(options) {
-  const { basinsData, floodNowData, forecast7dData, stationsData, damsData = [], onStationSelect } = options;
+  const { basinsData, floodNowData, forecast7dData, stationsData, damsData = [], dohRoadsData: initialDohRoadsData = null, onStationSelect } = options;
+  let dohFloodData = initialDohRoadsData;
 
   const container = document.createElement('div');
   container.className = 'gmaps-container';
@@ -2463,15 +2464,23 @@ export function createMapViewer(options) {
 
   const dohHighwayMarkers = [];
 
-  function renderDOHHighwayFloodLines() {
+  async function renderDOHHighwayFloodLines() {
     activeLegendLayers.add('doh-roads');
 
-    // Requirement 2: Filter to show ONLY flooded highways (waterDepthCm > 0)
-    const floodedFeatures = (dohFloodData.features || []).filter(
+    if (!dohFloodData || !dohFloodData.features || dohFloodData.features.length === 0) {
+      try {
+        dohFloodData = await getDohHighwayGeoJSON();
+      } catch (err) {
+        console.warn('Failed to load DOH Highway Flood live data:', err);
+      }
+    }
+
+    // Filter to show ONLY flooded highways (waterDepthCm > 0)
+    const floodedFeatures = (dohFloodData?.features || []).filter(
       (f) => f.properties && f.properties.waterDepthCm > 0
     );
     const filteredDohData = {
-      ...dohFloodData,
+      ...(dohFloodData || { type: 'FeatureCollection' }),
       features: floodedFeatures
     };
 
@@ -2772,20 +2781,12 @@ export function createMapViewer(options) {
 
   async function initTraffyFloodLayer() {
     try {
-      // 1. Immediately render seed markers synchronously to avoid blank map
-      traffyFloodGeoJSON = getSeedTraffyFloodGeoJSON();
-      if (isTraffyFloodVisible) {
+      const liveGeo = await getTraffyFloodGeoJSON();
+      traffyFloodGeoJSON = liveGeo;
+      if (isTraffyFloodVisible && liveGeo && Array.isArray(liveGeo.features)) {
         renderTraffyFloodMarkers(traffyFloodGeoJSON);
         activeLegendLayers.add('traffy-flood');
         updateBottomLegendBar();
-      }
-      // 2. Fetch live data asynchronously in background
-      const liveGeo = await getTraffyFloodGeoJSON();
-      if (liveGeo && liveGeo.features && liveGeo.features.length > 0) {
-        traffyFloodGeoJSON = liveGeo;
-        if (isTraffyFloodVisible) {
-          renderTraffyFloodMarkers(traffyFloodGeoJSON);
-        }
       }
     } catch (err) {
       console.error('Failed to load Traffy Fondue Flood data:', err);

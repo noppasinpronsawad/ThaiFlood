@@ -14,9 +14,18 @@ import { evaluateStationRisk } from '../services/hydrologyService.js';
 import { fetch7DayWeatherForecast, fetchCurrentProvinceWeather, THAI_PROVINCES } from '../services/weatherService.js';
 import { identifyRockUnit } from '../services/geologyService.js';
 import { evaluateDamRuleCurve } from '../services/damRuleCurveService.js';
-import bmaFloodRoadLines from '../data/bmaFloodRoadLines.json';
+import { fetchLiveBmaRoadFloodGeoJSON } from '../services/bmaFloodRoadService.js';
 
-// Helper: Haversine distance in km to nearest BMA flooded road line
+let liveBmaFloodedPoints = [];
+fetchLiveBmaRoadFloodGeoJSON().then((geo) => {
+  if (geo && Array.isArray(geo.features)) {
+    liveBmaFloodedPoints = geo.features
+      .filter((f) => f.properties && f.properties.isFlooded && f.geometry && f.geometry.coordinates)
+      .map((f) => f.geometry.coordinates);
+  }
+}).catch(() => {});
+
+// Helper: Haversine distance in km to nearest genuine BMA flooded road station
 function getMinDistanceToBMARoads(lat, lng) {
   const latitude = typeof lat === 'number' ? lat : parseFloat(lat);
   const longitude = typeof lng === 'number' ? lng : parseFloat(lng);
@@ -24,25 +33,21 @@ function getMinDistanceToBMARoads(lat, lng) {
 
   // BMA rough bounding box check: Lat 13.3 - 14.2, Lng 100.1 - 101.0
   if (latitude < 13.3 || latitude > 14.2 || longitude < 100.1 || longitude > 101.0) {
-    return 999999; // Far away (e.g. Srinagarind Dam in Kanchanaburi ~150km, Bhumibol ~450km)
+    return 999999;
   }
 
   let minDist = Infinity;
-  for (const feat of bmaFloodRoadLines.features) {
-    if (!feat.geometry || !feat.geometry.coordinates) continue;
-    const coords = feat.geometry.coordinates;
-    for (const [rLng, rLat] of coords) {
-      const dLat = (rLat - latitude) * (Math.PI / 180);
-      const dLng = (rLng - longitude) * (Math.PI / 180);
-      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(latitude * (Math.PI / 180)) * Math.cos(rLat * (Math.PI / 180)) *
-                Math.sin(dLng / 2) * Math.sin(dLng / 2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-      const distKm = 6371 * c;
-      if (distKm < minDist) {
-        minDist = distKm;
-        if (minDist <= 5.0) return minDist;
-      }
+  for (const [rLng, rLat] of liveBmaFloodedPoints) {
+    const dLat = (rLat - latitude) * (Math.PI / 180);
+    const dLng = (rLng - longitude) * (Math.PI / 180);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+              Math.cos(latitude * (Math.PI / 180)) * Math.cos(rLat * (Math.PI / 180)) *
+              Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    const distKm = 6371 * c;
+    if (distKm < minDist) {
+      minDist = distKm;
+      if (minDist <= 5.0) return minDist;
     }
   }
   return minDist;
@@ -1235,13 +1240,18 @@ export function createWaterStationList(stations, onStationSelect) {
         fetch7DayWeatherForecast(province, lat, lng, province)
       ]);
 
-      if (tempEl) tempEl.textContent = `${curr.temp}°C`;
-      if (descEl) descEl.textContent = curr.weatherDesc;
-      if (iconEl) iconEl.textContent = curr.icon;
-      if (rainProbEl) rainProbEl.textContent = `${curr.rainProb}%`;
-      if (humEl) humEl.textContent = `${curr.humidity}%`;
-      if (windEl) windEl.textContent = `14 กม./ชม.`;
-      if (rainMmEl) rainMmEl.textContent = `${curr.rainMm} มม.`;
+      if (curr) {
+        if (tempEl) tempEl.textContent = `${curr.temp}°C`;
+        if (descEl) descEl.textContent = curr.weatherDesc;
+        if (iconEl) iconEl.textContent = curr.icon;
+        if (rainProbEl) rainProbEl.textContent = `${curr.rainProb}%`;
+        if (humEl) humEl.textContent = `${curr.humidity}%`;
+        if (windEl) windEl.textContent = `14 กม./ชม.`;
+        if (rainMmEl) rainMmEl.textContent = `${curr.rainMm} มม.`;
+      } else {
+        if (tempEl) tempEl.textContent = `-`;
+        if (descEl) descEl.textContent = `ไม่พบข้อมูลสด`;
+      }
 
       if (container && forecast && forecast.days) {
         container.innerHTML = forecast.days
@@ -1257,6 +1267,8 @@ export function createWaterStationList(stations, onStationSelect) {
             </div>
           `)
           .join('');
+      } else if (container) {
+        container.innerHTML = `<div style="font-size: 12px; color: #64748b; text-align: center; padding: 12px;">ไม่สามารถโหลดข้อมูลพยากรณ์อากาศได้ในขณะนี้</div>`;
       }
     } catch (err) {
       if (container) {

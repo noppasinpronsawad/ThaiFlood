@@ -45,6 +45,12 @@ export function createForecastPanel(onLocationChange) {
 
     const data = await fetch7DayWeatherForecast(locKey);
 
+    if (!data || !data.days) {
+      if (totalElem) totalElem.textContent = 'ไม่พบข้อมูล';
+      if (listElem) listElem.innerHTML = '<div style="padding: 16px; text-align: center; color: #64748b; font-size: 13px;">ไม่สามารถเชื่อมต่อข้อมูลพยากรณ์อากาศได้ในขณะนี้</div>';
+      return;
+    }
+
     totalElem.textContent = `${data.total7DayRainMm} มม.`;
     if (data.total7DayRainMm > 150) {
       totalElem.style.color = '#dc2626';

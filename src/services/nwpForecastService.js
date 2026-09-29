@@ -210,56 +210,16 @@ export async function fetchNWPModelData() {
     nwpCacheTime = now;
     return parsed;
   } catch (err) {
-    console.warn('NWP fetch fallback to realistic seasonal forecast:', err.message);
-    return getFallbackNWPData();
+    console.warn('NWP fetch failed:', err.message);
+    // STRICT: Never fabricate synthetic precipitation data. Return cached or empty.
+    if (nwpCache) return nwpCache;
+    return [];
   }
 }
 
 export function getFallbackNWPData() {
-  const today = new Date();
-  return NWP_REGIONAL_NODES.map((node, idx) => {
-    const dailyForecasts = [];
-    for (let dIdx = 0; dIdx < 7; dIdx++) {
-      const d = new Date(today);
-      d.setDate(d.getDate() + dIdx);
-      const dateStr = d.toISOString().split('T')[0];
-      const displayDate = d.toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
-      const weekday = d.toLocaleDateString('th-TH', { weekday: 'short' });
-      const dayLabel = dIdx === 0 ? 'วันนี้' : (dIdx === 1 ? 'พรุ่งนี้' : `+${dIdx} วัน`);
-
-      // Realistic variation: Southern & Central have more monsoon rain
-      const isSouthOrEast = node.region.includes('ใต้') || node.region.includes('ออก');
-      const baseRain = isSouthOrEast ? (20 + (idx % 7) * 8) : (10 + (idx % 5) * 6);
-      const dayMultiplier = 1 + Math.sin(dIdx * 0.8) * 0.4;
-
-      const eRain = Number((baseRain * dayMultiplier).toFixed(1));
-      const gRain = Number((baseRain * (dayMultiplier + 0.1)).toFixed(1));
-
-      dailyForecasts.push({
-        dayIndex: dIdx,
-        dateStr,
-        displayDate,
-        weekday,
-        dayLabel,
-        ecmwf: {
-          rainMm: eRain,
-          rainProb: Math.min(95, Math.round(50 + eRain * 0.8)),
-          severity: getRainSeverityInfo(eRain)
-        },
-        gfs: {
-          rainMm: gRain,
-          rainProb: Math.min(95, Math.round(50 + gRain * 0.8)),
-          severity: getRainSeverityInfo(gRain)
-        }
-      });
-    }
-
-    return {
-      ...node,
-      polygon: computeVoronoiCell(node, NWP_REGIONAL_NODES),
-      dailyForecasts
-    };
-  });
+  if (nwpCache) return nwpCache;
+  return [];
 }
 
 /**
