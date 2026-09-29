@@ -2501,7 +2501,7 @@ export function createMapViewer(options) {
         layout: {
           'line-cap': 'round',
           'line-join': 'round',
-          visibility: 'visible'
+          visibility: 'none'
         },
         paint: {
           'line-color': [
@@ -2524,7 +2524,7 @@ export function createMapViewer(options) {
         layout: {
           'line-cap': 'round',
           'line-join': 'round',
-          visibility: 'visible'
+          visibility: 'none'
         },
         paint: {
           'line-color': [
@@ -2546,7 +2546,7 @@ export function createMapViewer(options) {
         layout: {
           'line-cap': 'round',
           'line-join': 'round',
-          visibility: 'visible'
+          visibility: 'none'
         },
         paint: {
           'line-color': '#ffffff',
@@ -2924,9 +2924,9 @@ export function createMapViewer(options) {
       if (!mapInstance.getLayer('layer-doh-roads-line')) {
         renderDOHHighwayFloodLines();
       }
-      if (mapInstance.getLayer('layer-doh-roads-glow')) mapInstance.setLayoutProperty('layer-doh-roads-glow', 'visibility', vis);
-      if (mapInstance.getLayer('layer-doh-roads-line')) mapInstance.setLayoutProperty('layer-doh-roads-line', 'visibility', vis);
-      if (mapInstance.getLayer('layer-doh-roads-core')) mapInstance.setLayoutProperty('layer-doh-roads-core', 'visibility', vis);
+      if (mapInstance.getLayer('layer-doh-roads-glow')) mapInstance.setLayoutProperty('layer-doh-roads-glow', 'visibility', 'none');
+      if (mapInstance.getLayer('layer-doh-roads-line')) mapInstance.setLayoutProperty('layer-doh-roads-line', 'visibility', 'none');
+      if (mapInstance.getLayer('layer-doh-roads-core')) mapInstance.setLayoutProperty('layer-doh-roads-core', 'visibility', 'none');
       dohHighwayMarkers.forEach((m) => {
         m.getElement().style.display = isVisible ? 'flex' : 'none';
       });
