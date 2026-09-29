@@ -81,15 +81,36 @@ const DAM_PROFILE_MAP = {
 
 /**
  * Calculates current semi-monthly interpolation index (0 to 23) from a date
+ * Robustly parses Date objects, ISO strings, Thai localized strings ('29 ก.ย. 2026'), and timestamps.
  */
 function getSemiMonthIndex(date = new Date()) {
-  const d = date instanceof Date ? date : new Date(date);
-  const month = d.getMonth(); // 0 to 11
-  const day = d.getDate(); // 1 to 31
+  let d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) {
+    if (typeof date === 'string') {
+      const thaiMonths = {
+        'ม.ค.': 0, 'ก.พ.': 1, 'มี.ค.': 2, 'เม.ย.': 3, 'พ.ค.': 4, 'มิ.ย.': 5,
+        'ก.ค.': 6, 'ส.ค.': 7, 'ก.ย.': 8, 'ต.ค.': 9, 'พ.ย.': 10, 'ธ.ค.': 11
+      };
+      for (const [thMonth, mIdx] of Object.entries(thaiMonths)) {
+        if (date.includes(thMonth)) {
+          const match = date.match(/(\d{1,2})\s+/);
+          const day = match ? parseInt(match[1], 10) : 15;
+          d = new Date(new Date().getFullYear(), mIdx, Math.max(1, Math.min(31, day)));
+          break;
+        }
+      }
+    }
+  }
+  if (isNaN(d.getTime())) {
+    d = new Date();
+  }
+
+  const month = typeof d.getMonth === 'function' && !isNaN(d.getMonth()) ? d.getMonth() : new Date().getMonth();
+  const day = typeof d.getDate === 'function' && !isNaN(d.getDate()) ? d.getDate() : new Date().getDate();
   const half = day <= 15 ? 0 : 1;
-  const index = month * 2 + half;
+  const index = Math.max(0, Math.min(23, month * 2 + half));
   const progressInHalf = day <= 15 ? (day - 1) / 14 : (day - 16) / 15;
-  return { index, nextIndex: (index + 1) % 24, progress: Math.max(0, Math.min(1, progressInHalf)) };
+  return { index, nextIndex: (index + 1) % 24, progress: Math.max(0, Math.min(1, progressInHalf || 0)) };
 }
 
 /**
@@ -115,13 +136,13 @@ export function evaluateDamRuleCurve(dam, date = new Date()) {
   const { index, nextIndex, progress } = getSemiMonthIndex(date);
 
   // Linear interpolation between semi-monthly control points
-  const urcBase = profile.urc[index];
-  const urcNext = profile.urc[nextIndex];
-  const urcPercent = Number((urcBase + (urcNext - urcBase) * progress).toFixed(1));
+  const urcBase = profile.urc[index] ?? 80;
+  const urcNext = profile.urc[nextIndex] ?? 80;
+  const urcPercent = Number((urcBase + (urcNext - urcBase) * progress).toFixed(1)) || 80;
 
-  const lrcBase = profile.lrc[index];
-  const lrcNext = profile.lrc[nextIndex];
-  const lrcPercent = Number((lrcBase + (lrcNext - lrcBase) * progress).toFixed(1));
+  const lrcBase = profile.lrc[index] ?? 35;
+  const lrcNext = profile.lrc[nextIndex] ?? 35;
+  const lrcPercent = Number((lrcBase + (lrcNext - lrcBase) * progress).toFixed(1)) || 35;
 
   const percentStorage = typeof dam.percentStorage === 'number'
     ? dam.percentStorage

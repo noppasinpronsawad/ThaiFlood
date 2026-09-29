@@ -7,6 +7,7 @@ import './index.css';
 import basinsData from './data/thailandBasins.json';
 import riverReachesData from './data/riverReaches.js';
 import bmaRoadsData from './data/bmaFloodRoadLines.json';
+import dohFloodData from './data/dohFloodHighways.json';
 import { fetchLiveWaterStations } from './services/waterStationService.js';
 import { fetchLiveDams } from './services/damService.js';
 import { computeCurrentFloodPolygons, compute7DayRiskPolygons } from './services/floodRiskService.js';
@@ -14,6 +15,15 @@ import { computeCurrentFloodPolygons, compute7DayRiskPolygons } from './services
 import { createNavbar } from './components/Navbar.js';
 import { createMapViewer } from './components/MapViewer.js';
 import { createWaterStationList } from './components/WaterStationList.js';
+
+// Prevent iOS Safari / Chrome elastic window scroll dislocation
+if (typeof window !== 'undefined') {
+  window.addEventListener('scroll', () => {
+    if (window.scrollY !== 0 || window.scrollX !== 0) {
+      window.scrollTo(0, 0);
+    }
+  }, { passive: true });
+}
 
 async function initApp() {
   const appContainer = document.getElementById('app');
@@ -69,6 +79,8 @@ async function initApp() {
         if (placeSheetInstance) {
           if (item.isDam) {
             placeSheetInstance.selectDam(item);
+          } else if (item.isDohRoad) {
+            placeSheetInstance.selectDohRoad(item);
           } else if (item.isRoad) {
             placeSheetInstance.selectRoad(item);
           } else if (item.isTraffy) {
@@ -103,6 +115,7 @@ async function initApp() {
       stations: stationsData,
       dams: damsData,
       bmaRoads: bmaRoadsData,
+      dohRoads: dohFloodData,
       onSearchSelect: (item) => {
         mapViewer.flyToStation(item);
         if (placeSheetInstance) {
@@ -131,6 +144,11 @@ async function initApp() {
       },
       onGFSDayChange: (dayIndex) => {
         mapViewer.setGFSDay(dayIndex);
+      },
+      onResetNorth: () => {
+        if (mapViewer && mapViewer.resetNorth) {
+          mapViewer.resetNorth();
+        }
       }
     });
     appContainer.appendChild(topWidget);

@@ -157,7 +157,7 @@ export function createWindFieldLayer(map) {
     canvas.width = rect.width * dpr;
     canvas.height = rect.height * dpr;
     if (ctx) {
-      ctx.scale(dpr, dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
   }
 
@@ -275,6 +275,7 @@ export function createWindFieldLayer(map) {
   function start() {
     initCanvas();
     if (!canvas) return;
+    resizeCanvas();
     canvas.style.display = 'block';
     clearTrails();
     if (!animId) {

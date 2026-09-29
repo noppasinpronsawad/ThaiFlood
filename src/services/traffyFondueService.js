@@ -16,7 +16,7 @@ const SEED_TRAFFY_INCIDENTS = [
     address: 'ถ.รัชดาภิเษก แขวงจอมพล เขตจตุจักร กรุงเทพมหานคร',
     district: 'จตุจักร',
     state: 'กำลังดำเนินการ',
-    timestamp: '2026-09-27 07:15:00',
+    timestamp: '2026-09-29 07:15:00',
     photo_url: ''
   },
   {
@@ -26,7 +26,7 @@ const SEED_TRAFFY_INCIDENTS = [
     address: 'วงเวียนบางเขน ถ.พหลโยธิน แขวงอนุสาวรีย์ เขตบางเขน กรุงเทพมหานคร',
     district: 'บางเขน',
     state: 'กำลังดำเนินการ',
-    timestamp: '2026-09-27 06:40:00',
+    timestamp: '2026-09-29 06:40:00',
     photo_url: ''
   },
   {
@@ -36,7 +36,7 @@ const SEED_TRAFFY_INCIDENTS = [
     address: 'ถ.วิภาวดีรังสิต แขวงจตุจักร เขตจตุจักร กรุงเทพมหานคร',
     district: 'จตุจักร',
     state: 'รอรับเรื่อง',
-    timestamp: '2026-09-27 07:45:00',
+    timestamp: '2026-09-29 07:45:00',
     photo_url: ''
   },
   {
@@ -46,7 +46,7 @@ const SEED_TRAFFY_INCIDENTS = [
     address: 'ถ.สุขุมวิท 71 แขวงพระโขนงเหนือ เขตวัฒนา กรุงเทพมหานคร',
     district: 'วัฒนา',
     state: 'กำลังดำเนินการ',
-    timestamp: '2026-09-27 06:10:00',
+    timestamp: '2026-09-29 06:10:00',
     photo_url: ''
   },
   {
@@ -56,7 +56,7 @@ const SEED_TRAFFY_INCIDENTS = [
     address: 'ถ.แจ้งวัฒนะ แขวงทุ่งสองห้อง เขตหลักสี่ กรุงเทพมหานคร',
     district: 'หลักสี่',
     state: 'กำลังดำเนินการ',
-    timestamp: '2026-09-27 07:20:00',
+    timestamp: '2026-09-29 07:20:00',
     photo_url: ''
   },
   {
@@ -66,7 +66,7 @@ const SEED_TRAFFY_INCIDENTS = [
     address: 'ถ.รามคำแหง แขวงหัวหมาก เขตบางกะปิ กรุงเทพมหานคร',
     district: 'บางกะปิ',
     state: 'รอรับเรื่อง',
-    timestamp: '2026-09-27 07:35:00',
+    timestamp: '2026-09-29 07:35:00',
     photo_url: ''
   },
   {
@@ -76,7 +76,7 @@ const SEED_TRAFFY_INCIDENTS = [
     address: 'ถ.ศรีนครินทร์ แขวงสวนหลวง เขตสวนหลวง กรุงเทพมหานคร',
     district: 'สวนหลวง',
     state: 'กำลังดำเนินการ',
-    timestamp: '2026-09-27 06:55:00',
+    timestamp: '2026-09-29 06:55:00',
     photo_url: ''
   },
   {
@@ -86,7 +86,7 @@ const SEED_TRAFFY_INCIDENTS = [
     address: 'ถ.เพชรเกษม แขวงบางแคเหนือ เขตบางแค กรุงเทพมหานคร',
     district: 'บางแค',
     state: 'เสร็จสิ้น',
-    timestamp: '2026-09-27 05:30:00',
+    timestamp: '2026-09-29 05:30:00',
     photo_url: ''
   },
   {
@@ -96,7 +96,7 @@ const SEED_TRAFFY_INCIDENTS = [
     address: 'ถ.ลาดพร้าว แขวงสะพานสอง เขตวังทองหลาง กรุงเทพมหานคร',
     district: 'วังทองหลาง',
     state: 'กำลังดำเนินการ',
-    timestamp: '2026-09-27 07:05:00',
+    timestamp: '2026-09-29 07:05:00',
     photo_url: ''
   },
   {
@@ -106,7 +106,7 @@ const SEED_TRAFFY_INCIDENTS = [
     address: 'ถ.พระราม 4 แขวงคลองเตย เขตคลองเตย กรุงเทพมหานคร',
     district: 'คลองเตย',
     state: 'เสร็จสิ้น',
-    timestamp: '2026-09-27 06:00:00',
+    timestamp: '2026-09-29 06:00:00',
     photo_url: ''
   },
   {
@@ -116,7 +116,7 @@ const SEED_TRAFFY_INCIDENTS = [
     address: 'แขวงคลองถนน เขตสายไหม กรุงเทพมหานคร',
     district: 'สายไหม',
     state: 'กำลังดำเนินการ',
-    timestamp: '2026-09-27 08:05:00',
+    timestamp: '2026-09-29 08:05:00',
     photo_url: ''
   },
   {
@@ -126,13 +126,13 @@ const SEED_TRAFFY_INCIDENTS = [
     address: 'ถ.พัฒนาการ แขวงสวนหลวง เขตสวนหลวง กรุงเทพมหานคร',
     district: 'สวนหลวง',
     state: 'รอรับเรื่อง',
-    timestamp: '2026-09-27 07:50:00',
+    timestamp: '2026-09-29 07:50:00',
     photo_url: ''
   }
 ];
 
 function formatThaiTimestamp(dateStr) {
-  if (!dateStr) return '27 ก.ย. 2026 07:30 น.';
+  if (!dateStr) return '29 ก.ย. 2026 00:45 น.';
   try {
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return dateStr;
@@ -206,7 +206,7 @@ export async function getTraffyFloodGeoJSON() {
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const timeoutId = setTimeout(() => controller.abort(), 1000);
 
     const res = await fetch(TRAFFY_API_URL, {
       signal: controller.signal,
@@ -243,3 +243,12 @@ export async function getTraffyFloodGeoJSON() {
     features: combined
   };
 }
+
+export function getSeedTraffyFloodGeoJSON() {
+  const seedFeatures = SEED_TRAFFY_INCIDENTS.map(normalizeTraffyItem).filter(Boolean);
+  return {
+    type: 'FeatureCollection',
+    features: seedFeatures
+  };
+}
+

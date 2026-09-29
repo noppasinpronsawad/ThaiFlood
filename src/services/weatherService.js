@@ -15,6 +15,9 @@ const KEY_LOCATIONS = {
 
 import { fetchTMD7DayForecast } from './tmdWeatherService.js';
 
+const forecastCache = new Map();
+const FORECAST_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+
 export async function fetch7DayWeatherForecast(locationKey = 'ayutthaya', customLat = null, customLng = null, customName = null) {
   let loc = KEY_LOCATIONS[locationKey];
   if (!loc && typeof locationKey === 'string') {
@@ -24,38 +27,61 @@ export async function fetch7DayWeatherForecast(locationKey = 'ayutthaya', custom
     }
   }
   if (!loc && customLat !== null && customLng !== null) {
-    loc = { name: customName || 'ตำแหน่งที่เลือก', lat: customLat, lng: customLng };
+    const safeLat = typeof customLat === 'number' && !isNaN(customLat) ? customLat : 13.7563;
+    const safeLng = typeof customLng === 'number' && !isNaN(customLng) ? customLng : 100.5018;
+    loc = { name: customName || 'ตำแหน่งที่เลือก', lat: safeLat, lng: safeLng };
   }
   if (!loc) {
     loc = KEY_LOCATIONS.ayutthaya;
   }
 
-  // 1. Prioritize Official TMD NWP API when API key is provided
-  if (import.meta.env.VITE_TMD_API_KEY) {
+  // Ensure lat and lng are valid numbers
+  if (typeof loc.lat !== 'number' || isNaN(loc.lat)) loc.lat = 13.7563;
+  if (typeof loc.lng !== 'number' || isNaN(loc.lng)) loc.lng = 100.5018;
+
+  const cacheKey = `${loc.name || 'loc'}_${loc.lat.toFixed(2)}_${loc.lng.toFixed(2)}`;
+  const now = Date.now();
+  const cached = forecastCache.get(cacheKey);
+  if (cached && (now - cached.timestamp < FORECAST_CACHE_TTL)) {
+    return cached.data;
+  }
+
+  // 1. If TMD API key is provided and running outside restricted browser CORS
+  // Note: TMD server restricts Access-Control-Allow-Origin to wxmap.tmd.go.th.
+  // In browser, TMD fetch fails with CORS and causes a 6s stall. We use Open-Meteo as primary in browser.
+  const isDirectBrowser = typeof window !== 'undefined';
+  if (import.meta?.env?.VITE_TMD_API_KEY && !isDirectBrowser) {
     try {
       const tmdData = await fetchTMD7DayForecast(loc.lat, loc.lng, loc.name);
-      return tmdData;
+      if (tmdData && tmdData.days) {
+        forecastCache.set(cacheKey, { timestamp: now, data: tmdData });
+        return tmdData;
+      }
     } catch (tmdErr) {
       console.warn('TMD API fallback to Open-Meteo:', tmdErr.message);
     }
   }
 
-  // 2. Open-Meteo Global Forecast System fallback
+  // 2. Open-Meteo Global Forecast System (High performance, < 150ms, no CORS restrictions)
   const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lng}&daily=weathercode,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,windspeed_10m_max&timezone=Asia%2FBangkok`;
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
 
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    return formatWeatherData(data, loc);
+    const formatted = formatWeatherData(data, loc);
+    forecastCache.set(cacheKey, { timestamp: now, data: formatted });
+    return formatted;
   } catch (err) {
     console.warn('Using offline realistic weather fallback:', err.message);
-    return getFallbackWeatherData(loc);
+    const fallback = getFallbackWeatherData(loc);
+    forecastCache.set(cacheKey, { timestamp: now, data: fallback });
+    return fallback;
   }
 }
 
@@ -248,8 +274,11 @@ export function getNearestProvince(lat, lng) {
 const currentProvinceWeatherCache = new Map();
 const CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes
 
-export async function fetchCurrentProvinceWeather(provinceName, lat, lng) {
-  const cacheKey = provinceName || `${lat.toFixed(2)},${lng.toFixed(2)}`;
+export async function fetchCurrentProvinceWeather(provinceName, lat = 13.7563, lng = 100.5018) {
+  const safeLat = (typeof lat === 'number' && !isNaN(lat)) ? lat : 13.7563;
+  const safeLng = (typeof lng === 'number' && !isNaN(lng)) ? lng : 100.5018;
+  const safeProvince = provinceName || 'กรุงเทพมหานคร';
+  const cacheKey = `${safeProvince}_${safeLat.toFixed(2)}_${safeLng.toFixed(2)}`;
   const now = Date.now();
   const cached = currentProvinceWeatherCache.get(cacheKey);
 
@@ -257,11 +286,11 @@ export async function fetchCurrentProvinceWeather(provinceName, lat, lng) {
     return cached.data;
   }
 
-  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,weather_code,precipitation&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FBangkok`;
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${safeLat}&longitude=${safeLng}&current=temperature_2m,relative_humidity_2m,weather_code,precipitation&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FBangkok`;
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 4000);
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
 

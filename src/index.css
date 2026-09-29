@@ -29,20 +29,29 @@
   box-sizing: border-box;
 }
 
-body {
+html, body {
   font-family: var(--font-thai);
   background-color: #e8eaed;
   color: var(--gmaps-text);
+  height: 100%;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
+  position: fixed;
+  top: 0;
+  left: 0;
   overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: auto;
   -webkit-font-smoothing: antialiased;
 }
 
 #app {
   position: relative;
   width: 100vw;
+  height: 100%;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -53,9 +62,12 @@ body {
   position: absolute;
   top: 0;
   left: 0;
-  width: 100vw;
+  width: 100%;
+  height: 100%;
   height: 100vh;
+  height: 100dvh;
   z-index: 1;
+  overflow: hidden;
 }
 
 #map {
@@ -187,12 +199,83 @@ body {
 }
 
 /* ==========================================================================
-   Google Maps Style Right-Hand Collapsible Layer Panel (Hide Menu Bar)
+   Google Maps Style Right-Hand Collapsible Layer Panel & North Control Stack
    ========================================================================== */
-.gmaps-layer-panel {
+.gmaps-layer-panel-stack {
   position: absolute;
   top: 16px;
   right: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  z-index: 30;
+  pointer-events: none;
+}
+
+.gmaps-layer-panel-stack > * {
+  pointer-events: auto;
+}
+
+.gmaps-layer-panel-stack .gmaps-layer-panel,
+.gmaps-layer-panel {
+  position: relative !important;
+  top: auto !important;
+  right: auto !important;
+  left: auto !important;
+  bottom: auto !important;
+  margin: 0;
+}
+
+.gmaps-north-container {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  pointer-events: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.gmaps-north-btn {
+  width: 32px;
+  height: 32px;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 4px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  color: #1e293b;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  touch-action: manipulation;
+  outline: none;
+}
+
+.gmaps-north-btn:hover {
+  background: #ffffff;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.28);
+  border-color: #94a3b8;
+  transform: translateY(-1px) scale(1.05);
+}
+
+.gmaps-north-btn:active {
+  background: #f1f5f9;
+  transform: translateY(0) scale(0.95);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.gmaps-north-compass-icon {
+  width: 22px;
+  height: 22px;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: block;
+}
+
+.gmaps-layer-panel {
   width: 320px;
   max-width: calc(100vw - 32px);
   box-sizing: border-box;
@@ -751,47 +834,22 @@ body {
   background: #e8eaed;
 }
 
-/* Basemap Switcher (Google Maps Style with 50x50px square preview cards) */
+/* Basemap Switcher (Single compact rounded square button with "เลเยอร์" scrim overlay and hover/tap flyout menu) */
 .gmaps-basemap-container {
   position: absolute;
   bottom: 24px;
   left: 20px;
   z-index: 32;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-radius: 12px;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.22);
-  padding: 8px 10px 10px 10px;
-  border: 1px solid rgba(218, 220, 224, 0.85);
   font-family: var(--font-thai);
+  user-select: none;
   animation: fadeIn 0.25s ease-out;
   transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.gmaps-basemap-header {
-  margin-bottom: 6px;
-  display: flex;
-  align-items: center;
-  white-space: nowrap;
-}
-
-.basemap-header-label {
-  font-size: 11px;
-  color: #5f6368;
-  font-weight: 500;
-}
-
-.basemap-header-label b {
-  color: #1a73e8;
-  font-weight: 700;
-}
-
 .gmaps-basemap-wrapper {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
-  position: relative;
 }
 
 .gmaps-basemap-trigger {
@@ -800,51 +858,100 @@ body {
   padding: 0;
   cursor: pointer;
   position: relative;
-  display: flex;
-  align-items: center;
+  display: block;
   outline: none;
+  border-radius: 10px;
 }
 
-.gmaps-basemap-trigger:hover .basemap-thumb {
-  border-color: #1a73e8;
-  transform: scale(1.02);
+.gmaps-basemap-trigger #basemap-active-thumb {
+  width: 54px;
+  height: 54px;
+  border-radius: 10px;
+  border: 2.5px solid #ffffff;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28);
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s ease;
 }
 
-.basemap-expand-arrow {
+.gmaps-basemap-trigger:hover #basemap-active-thumb,
+.gmaps-basemap-container.expanded #basemap-active-thumb {
+  transform: scale(1.04);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  border-color: #ffffff;
+}
+
+/* Scrim overlay with icon and "เลเยอร์" text (matching uploaded image exactly) */
+.basemap-scrim {
   position: absolute;
-  right: -6px;
-  bottom: -4px;
-  background: #1a73e8;
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 700;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 2px 3px 2px;
+  background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.65) 45%, rgba(0, 0, 0, 0.92) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 6px rgba(26, 115, 232, 0.45);
-  border: 1.5px solid #ffffff;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  letter-spacing: -1px;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.basemap-layer-svg {
+  display: inline-block;
+  flex-shrink: 0;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+}
+
+.basemap-scrim-title {
+  color: #ffffff;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
   line-height: 1;
 }
 
-.gmaps-basemap-container:hover .basemap-expand-arrow,
-.gmaps-basemap-trigger:hover .basemap-expand-arrow {
-  background: #1557b0;
-  transform: scale(1.15) translateX(2px);
+.basemap-header-label {
+  font-size: 11px;
+  color: #5f6368;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
-/* Side options grid (slides out to the right) */
+.basemap-header-label b {
+  color: #1a73e8;
+  font-weight: 700;
+}
+
+/* Side options grid (slides out to the right on desktop, or above on mobile) */
 .gmaps-basemap-side-grid {
   display: none;
+  position: absolute;
+  left: calc(100% + 10px);
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.98);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 12px;
+  padding: 8px 12px 10px 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  z-index: 50;
+  flex-direction: column;
+  gap: 6px;
+  animation: slideInRight 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.gmaps-basemap-header {
+  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+}
+
+.basemap-cards-row {
+  display: flex;
   gap: 8px;
   align-items: center;
-  padding-left: 6px;
-  border-left: 1px dashed #dadce0;
-  animation: slideInRight 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .gmaps-basemap-container.expanded .gmaps-basemap-side-grid,
@@ -975,6 +1082,23 @@ body {
   flex-direction: column;
   align-items: center;
   filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.35));
+}
+
+.dam-pin-badge.badge-dam .dam-pin-svg {
+  width: 26px;
+  height: 26px;
+  display: block;
+}
+
+.dam-pin-badge.badge-reservoir .dam-pin-svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+
+.dam-pin-badge.badge-reservoir .dam-pin-name {
+  font-size: 9.5px;
+  padding: 1px 5px;
 }
 
 .dam-pin-svg {
@@ -1512,10 +1636,46 @@ body {
   }
 
   /* 2. Right-Side Collapsible Layer Panel (Mobile: Icon mode when collapsed, full width when expanded) */
-  .gmaps-layer-panel {
+  .gmaps-layer-panel-stack {
     top: calc(62px + env(safe-area-inset-top, 0px));
     right: 10px;
-    left: auto;
+    align-items: center;
+    gap: 10px;
+    z-index: 30;
+    pointer-events: none;
+  }
+
+  .gmaps-north-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    pointer-events: auto;
+    margin: 0;
+    padding: 0;
+  }
+
+  .gmaps-north-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(0, 0, 0, 0.12);
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+
+  .gmaps-north-compass-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .gmaps-layer-panel {
+    position: relative !important;
+    top: auto !important;
+    right: auto !important;
+    left: auto !important;
+    margin: 0;
     width: 320px;
     max-width: calc(100vw - 20px);
     max-height: calc(100vh - 130px);
@@ -1526,6 +1686,11 @@ body {
 
   /* When collapsed on mobile: Clean circular action button displaying only the icon */
   .gmaps-layer-panel.collapsed {
+    position: relative !important;
+    top: auto !important;
+    right: auto !important;
+    left: auto !important;
+    margin: 0;
     width: 44px;
     height: 44px;
     min-width: 44px;
@@ -1642,14 +1807,36 @@ body {
 
   /* 4. Basemap Switcher (Bottom-Left) */
   .gmaps-basemap-container {
-    bottom: calc(18px + env(safe-area-inset-bottom, 0px));
-    left: 8px;
-    padding: 4px 6px 5px 6px;
-    border-radius: 10px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
-    max-width: calc(100vw - 75px);
+    bottom: calc(24px + env(safe-area-inset-bottom, 8px));
+    left: 12px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    max-width: none;
     box-sizing: border-box;
     overflow: visible;
+  }
+
+  .gmaps-basemap-trigger #basemap-active-thumb {
+    width: 48px;
+    height: 48px;
+    border-radius: 9px;
+    border-width: 2px;
+  }
+
+  .basemap-scrim {
+    padding: 8px 2px 2px 2px;
+    gap: 3px;
+  }
+
+  .basemap-layer-svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .basemap-scrim-title {
+    font-size: 10px;
   }
 
   .basemap-header-label {
@@ -1681,8 +1868,8 @@ body {
     border-left: none;
     z-index: 50;
     display: none;
-    gap: 8px;
-    flex-direction: row;
+    gap: 6px;
+    flex-direction: column;
     max-width: calc(100vw - 30px);
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
@@ -1694,14 +1881,20 @@ body {
     animation: popUpMobile 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
+  .basemap-cards-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
   .basemap-card-name {
     font-size: 10px;
   }
 
   /* 5. Map Controls Stack (Bottom-Right: Zoom, 3D, Locate) */
   .gmaps-controls-stack {
-    bottom: calc(18px + env(safe-area-inset-bottom, 0px));
-    right: 10px;
+    bottom: calc(24px + env(safe-area-inset-bottom, 8px));
+    right: 12px;
     gap: 6px;
   }
 
@@ -1751,6 +1944,7 @@ body {
   .gmaps-bottom-legend-card,
   .gmaps-ecmwf-float-bar {
     bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+    bottom: calc(88px + env(safe-area-inset-bottom, 8px));
     left: 8px;
     right: auto;
     transform: none;
@@ -1882,8 +2076,17 @@ body {
     font-size: 11px;
   }
   .gmaps-basemap-container {
-    padding: 3px 5px 4px 5px;
-    left: 6px;
+    bottom: calc(20px + env(safe-area-inset-bottom, 6px));
+    left: 8px;
+    padding: 0;
+  }
+  .gmaps-basemap-trigger #basemap-active-thumb {
+    width: 42px;
+    height: 42px;
+    border-radius: 8px;
+  }
+  .basemap-scrim-title {
+    font-size: 9.5px;
   }
   .basemap-header-label {
     font-size: 8px;
@@ -1896,6 +2099,10 @@ body {
   .gmaps-zoom-btn {
     width: 34px;
     height: 34px;
+  }
+  .gmaps-controls-stack {
+    bottom: calc(20px + env(safe-area-inset-bottom, 6px));
+    right: 8px;
   }
   .gmaps-bottom-legend-card,
   .gmaps-ecmwf-float-bar {
@@ -2371,13 +2578,8 @@ body {
 
 .traffy-road-marker-pin {
   cursor: pointer;
-  transform: translate(-50%, -50%);
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 22;
-}
-
-.traffy-road-marker-pin:hover {
-  transform: translate(-50%, -50%) scale(1.18);
+  pointer-events: auto !important;
+  display: block;
   z-index: 35;
 }
 
@@ -2390,6 +2592,11 @@ body {
   align-items: center;
   justify-content: center;
   filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.35));
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.traffy-road-marker-pin:hover .traffy-pin-inner {
+  transform: scale(1.22);
 }
 
 .traffy-road-svg {
@@ -2416,6 +2623,85 @@ body {
 .traffy-status-badge.status-resolved {
   background: #10b981;
   box-shadow: 0 0 6px rgba(16, 185, 129, 0.85);
+}
+
+/* DOH National Highway Flood Emblem Pin (Requirement 2: สัญลักษณ์กรมทางหลวง) */
+.doh-highway-marker-pin {
+  cursor: pointer;
+  pointer-events: auto !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  z-index: 38;
+}
+
+.doh-shield-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 3px 7px;
+  background: #0f172a;
+  border: 1.8px solid #38bdf8;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45), 0 0 10px rgba(56, 189, 248, 0.35);
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.18s ease;
+}
+
+.doh-highway-marker-pin:hover .doh-shield-card {
+  transform: scale(1.15);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6), 0 0 16px rgba(56, 189, 248, 0.65);
+}
+
+.doh-shield-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.doh-crest-svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.doh-route-label {
+  font-size: 11px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+}
+
+.doh-status-pill {
+  margin-top: 2px;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  letter-spacing: -0.1px;
+}
+
+.doh-status-pill.status-impassable {
+  background: #dc2626;
+  color: #ffffff;
+  box-shadow: 0 0 6px rgba(220, 38, 38, 0.6);
+}
+
+.doh-status-pill.status-passable {
+  background: #ea580c;
+  color: #ffffff;
+  box-shadow: 0 0 6px rgba(234, 88, 12, 0.5);
+}
+
+.doh-shield-arrow-down {
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 5px solid #0f172a;
+  margin-top: -1px;
 }
 
 /* Traffy Fondue Popup Card */
@@ -3194,4 +3480,194 @@ body {
   background: #1e293b;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.35);
+}
+
+/* ========================================================
+   Mobile "รายละเอียดแผนที่" Google Maps Style Bottom Sheet
+   Matching user uploaded reference image
+   ======================================================== */
+.gmaps-mobile-layer-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  z-index: 2490 !important;
+  opacity: 0;
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  pointer-events: auto !important;
+}
+
+.gmaps-mobile-layer-backdrop.open {
+  display: block;
+  opacity: 1;
+}
+
+.gmaps-mobile-layer-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #ffffff;
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.22);
+  z-index: 2500 !important;
+  transform: translateY(105%);
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
+  will-change: transform;
+  pointer-events: auto !important;
+}
+
+.gmaps-mobile-layer-sheet.open {
+  transform: translateY(0);
+}
+
+.mobile-layer-sheet-handle-bar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding-top: 10px;
+  padding-bottom: 4px;
+  cursor: grab;
+}
+
+.mobile-layer-sheet-handle {
+  width: 36px;
+  height: 4px;
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+.mobile-layer-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px 14px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  pointer-events: auto !important;
+}
+
+.mobile-layer-sheet-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: #1e293b;
+  letter-spacing: -0.2px;
+}
+
+.mobile-layer-sheet-close {
+  background: #f1f5f9;
+  border: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  pointer-events: auto !important;
+  transition: background 0.15s, color 0.15s, transform 0.1s;
+}
+
+.mobile-layer-sheet-close:active {
+  background: #e2e8f0;
+  transform: scale(0.92);
+}
+
+.mobile-layer-sheet-body {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 16px 24px 16px;
+  pointer-events: auto !important;
+  touch-action: pan-y !important;
+}
+
+.mobile-layer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px 12px;
+  pointer-events: auto !important;
+}
+
+.mobile-layer-card-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: transparent;
+  border: none;
+  padding: 4px 0;
+  cursor: pointer;
+  outline: none;
+  text-align: center;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.12s ease;
+  pointer-events: auto !important;
+  touch-action: manipulation !important;
+}
+
+.mobile-layer-card-btn:active {
+  transform: scale(0.94);
+}
+
+.mobile-layer-card-thumb {
+  width: 64px;
+  height: 64px;
+  border-radius: 18px;
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+}
+
+.mobile-layer-card-thumb svg {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: block;
+}
+
+/* Active State matching Google Maps reference image */
+.mobile-layer-card-btn.active .mobile-layer-card-thumb {
+  border: 2.5px solid #1a73e8;
+  background: #e8f0fe;
+  box-shadow: 0 0 0 1px #1a73e8, 0 4px 10px rgba(26, 115, 232, 0.18);
+}
+
+.mobile-layer-card-name {
+  font-size: 12px;
+  font-weight: 500;
+  color: #475569;
+  line-height: 1.25;
+  text-align: center;
+  max-width: 84px;
+  word-break: break-word;
+  transition: color 0.15s ease;
+}
+
+.mobile-layer-card-btn.active .mobile-layer-card-name {
+  color: #1a73e8;
+  font-weight: 700;
+}
+
+/* Desktop safety: Never show mobile layer sheet or backdrop on desktop */
+@media (min-width: 769px) {
+  .gmaps-mobile-layer-backdrop,
+  .gmaps-mobile-layer-sheet {
+    display: none !important;
+  }
 }

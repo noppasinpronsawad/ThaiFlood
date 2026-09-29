@@ -215,7 +215,7 @@ export async function fetchNWPModelData() {
   }
 }
 
-function getFallbackNWPData() {
+export function getFallbackNWPData() {
   const today = new Date();
   return NWP_REGIONAL_NODES.map((node, idx) => {
     const dailyForecasts = [];

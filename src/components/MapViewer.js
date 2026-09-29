@@ -9,11 +9,11 @@ import { generateFlowVectorPoints } from '../services/hydrologyService.js';
 import { buildDamGeoJSON } from '../services/damService.js';
 import { identifyRockUnit } from '../services/geologyService.js';
 import { getNearestProvince, fetchCurrentProvinceWeather } from '../services/weatherService.js';
-import { fetchNWPModelData, buildGFSGeoJSON, buildECMWFGeoJSON } from '../services/nwpForecastService.js';
-import bmaFloodRoadLines from '../data/bmaFloodRoadLines.json';
+import { fetchNWPModelData, buildGFSGeoJSON, buildECMWFGeoJSON, getFallbackNWPData } from '../services/nwpForecastService.js';
+import dohFloodData from '../data/dohFloodHighways.json';
 import { createWindFieldLayer } from './WindFieldLayer.js';
 import { evaluateDamRuleCurve } from '../services/damRuleCurveService.js';
-import { getTraffyFloodGeoJSON } from '../services/traffyFondueService.js';
+import { getTraffyFloodGeoJSON, getSeedTraffyFloodGeoJSON } from '../services/traffyFondueService.js';
 
 export function createMapViewer(options) {
   const { basinsData, floodNowData, forecast7dData, stationsData, damsData = [], onStationSelect } = options;
@@ -63,32 +63,43 @@ export function createMapViewer(options) {
 
   container.appendChild(controlsStack);
 
-  // Basemap Switcher (Google Maps Style with 50x50px square preview cards, >> expand button, and sideways options)
+  // Basemap Switcher (Single compact rounded square button with "เลเยอร์" scrim overlay and hover/tap flyout menu)
   const basemapSwitcher = document.createElement('div');
   basemapSwitcher.className = 'gmaps-basemap-container';
   basemapSwitcher.id = 'gmaps-basemap-container';
   basemapSwitcher.innerHTML = `
-    <div class="gmaps-basemap-header">
-      <span class="basemap-header-label">ประเภทแผนที่: <b id="basemap-active-name">แผนที่</b></span>
-    </div>
     <div class="gmaps-basemap-wrapper">
-      <button class="gmaps-basemap-trigger" id="gmaps-basemap-trigger" title="คลิกหรือชี้เมาส์เพื่อเลือกประเภทแผนที่" type="button">
-        <div class="basemap-thumb thumb-street" id="basemap-active-thumb"></div>
-        <div class="basemap-expand-arrow" id="basemap-expand-arrow" title="แสดงตัวเลือกแผนที่อื่น">»</div>
+      <button class="gmaps-basemap-trigger" id="gmaps-basemap-trigger" title="คลิกหรือวางเมาส์เพื่อเลือกประเภทแผนที่" type="button" aria-label="เลือกประเภทแผนที่">
+        <div class="basemap-thumb thumb-street" id="basemap-active-thumb">
+          <div class="basemap-scrim">
+            <svg class="basemap-layer-svg" width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M12 3.5L21.5 8.8L12 14.1L2.5 8.8L12 3.5Z" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M2.5 12.8L12 18.1L21.5 12.8L21.5 15.8L12 21.1L2.5 15.8L2.5 12.8Z" fill="#ffffff"/>
+            </svg>
+            <span class="basemap-scrim-title" id="basemap-scrim-title">แผนที่</span>
+          </div>
+        </div>
+        <div class="basemap-expand-arrow" id="basemap-expand-arrow" style="display:none;" title="แสดงตัวเลือกแผนที่อื่น">»</div>
       </button>
+
       <div class="gmaps-basemap-side-grid" id="gmaps-basemap-side-grid">
-        <button class="gmaps-basemap-card active" id="btn-mode-street" data-mode="street" data-name="แผนที่" title="แผนที่มาตรฐาน (OpenStreetMap)" type="button">
-          <div class="basemap-thumb thumb-street"></div>
-          <span class="basemap-card-name">แผนที่</span>
-        </button>
-        <button class="gmaps-basemap-card" id="btn-mode-satellite" data-mode="satellite" data-name="ภาพถ่ายดาวเทียม" title="ภาพถ่ายดาวเทียม (ESRI World Imagery)" type="button">
-          <div class="basemap-thumb thumb-satellite"></div>
-          <span class="basemap-card-name">ดาวเทียม</span>
-        </button>
-        <button class="gmaps-basemap-card" id="btn-mode-topo" data-mode="topo" data-name="ภูมิประเทศ" title="ภูมิประเทศ เส้นชั้นความสูง (OpenTopoMap)" type="button">
-          <div class="basemap-thumb thumb-topo"></div>
-          <span class="basemap-card-name">ภูมิประเทศ</span>
-        </button>
+        <div class="gmaps-basemap-header">
+          <span class="basemap-header-label">ประเภทแผนที่: <b id="basemap-active-name">แผนที่</b></span>
+        </div>
+        <div class="basemap-cards-row">
+          <button class="gmaps-basemap-card active" id="btn-mode-street" data-mode="street" data-name="แผนที่" title="แผนที่มาตรฐาน (OpenStreetMap)" type="button">
+            <div class="basemap-thumb thumb-street"></div>
+            <span class="basemap-card-name">แผนที่</span>
+          </button>
+          <button class="gmaps-basemap-card" id="btn-mode-satellite" data-mode="satellite" data-name="ภาพถ่ายดาวเทียม" title="ภาพถ่ายดาวเทียม (ESRI World Imagery)" type="button">
+            <div class="basemap-thumb thumb-satellite"></div>
+            <span class="basemap-card-name">ดาวเทียม</span>
+          </button>
+          <button class="gmaps-basemap-card" id="btn-mode-topo" data-mode="topo" data-name="ภูมิประเทศ" title="ภูมิประเทศ เส้นชั้นความสูง (OpenTopoMap)" type="button">
+            <div class="basemap-thumb thumb-topo"></div>
+            <span class="basemap-card-name">ภูมิประเทศ</span>
+          </button>
+        </div>
       </div>
     </div>
   `;
@@ -143,7 +154,7 @@ export function createMapViewer(options) {
   let activeBasemap = 'street';
   const flowMarkers = [];
   let damMarkers = [];
-  let cachedNWPData = null;
+  let cachedNWPData = getFallbackNWPData();
   let currentGFSDay = 0;
   let currentECMWFDay = 0;
   let currentStationPopup = null;
@@ -767,9 +778,19 @@ export function createMapViewer(options) {
       topo: 'thumb-topo'
     };
 
-    function updateBasemapLabel(name) {
+    const basemapShortNames = {
+      street: 'แผนที่',
+      satellite: 'ดาวเทียม',
+      topo: 'ภูมิประเทศ'
+    };
+
+    function updateBasemapLabel(name, mode) {
       if (basemapActiveLabel) {
         basemapActiveLabel.textContent = name;
+      }
+      const scrimTitle = container.querySelector('#basemap-scrim-title');
+      if (scrimTitle && mode) {
+        scrimTitle.textContent = basemapShortNames[mode] || name;
       }
     }
 
@@ -788,7 +809,7 @@ export function createMapViewer(options) {
         basemapActiveThumb.className = `basemap-thumb ${basemapThumbs[mode] || 'thumb-street'}`;
       }
 
-      updateBasemapLabel(basemapNames[mode] || mode);
+      updateBasemapLabel(basemapNames[mode] || mode, mode);
 
       if (mapInstance.getLayer('osm-base-layer')) {
         mapInstance.setLayoutProperty('osm-base-layer', 'visibility', mode === 'street' ? 'visible' : 'none');
@@ -861,6 +882,10 @@ export function createMapViewer(options) {
     }
 
     if (basemapTrigger) basemapTrigger.addEventListener('click', toggleBasemapExpand);
+
+    basemapSwitcher.addEventListener('mouseenter', () => {
+      basemapSwitcher.classList.add('expanded');
+    });
 
     basemapSwitcher.addEventListener('mouseleave', () => {
       basemapSwitcher.classList.remove('expanded');
@@ -1039,6 +1064,7 @@ export function createMapViewer(options) {
 
     function handleZoomAndMove() {
       if (!mapInstance) return;
+      updateDamZoomGating();
       const zoom = mapInstance.getZoom();
       // Show weather pill when zoomed in closer to province/district level (zoom >= 8.0 to 12.5)
       const isProvinceView = zoom >= 8.0 && zoom <= 12.5;
@@ -1065,7 +1091,7 @@ export function createMapViewer(options) {
       renderDamLayers();
       renderStationMarkers();
       renderFlowDirectionArrows();
-      renderBMARoadFloodLines();
+      renderDOHHighwayFloodLines();
       initTraffyFloodLayer();
       initTrafficLayer();
       initNWPForecastLayers();
@@ -1077,8 +1103,14 @@ export function createMapViewer(options) {
       handleZoomAndMove();
     });
 
-    // Requirement 2: Auto collapse layer panel and expanded legend description on map drag, touch, or click
-    function autoCollapseLayerPanel() {
+    // Requirement 2: Auto collapse layer panel and expanded legend description on map drag
+    function autoCollapseLayerPanel(e) {
+      if (e && e.originalEvent) {
+        const t = e.originalEvent.target;
+        if (t && t.closest && (t.closest('#gmaps-mobile-layer-sheet') || t.closest('.gmaps-mobile-layer-sheet') || t.closest('#gmaps-mobile-layer-backdrop') || t.closest('#gmaps-layer-panel'))) {
+          return;
+        }
+      }
       collapseLegendDesc();
       const panel = document.querySelector('#gmaps-layer-panel');
       if (panel && !panel.classList.contains('collapsed')) {
@@ -1093,16 +1125,32 @@ export function createMapViewer(options) {
       }
     }
 
-    mapInstance.on('dragstart', () => {
-      autoCollapseLayerPanel();
+    function closeMobileSheetOnMapPan(e) {
+      if (e && e.originalEvent) {
+        const t = e.originalEvent.target;
+        if (t && t.closest && (t.closest('#gmaps-mobile-layer-sheet') || t.closest('#gmaps-mobile-layer-backdrop'))) {
+          return;
+        }
+      }
+      const mobileSheet = document.querySelector('#gmaps-mobile-layer-sheet');
+      if (mobileSheet && mobileSheet.classList.contains('open')) {
+        mobileSheet.classList.remove('open');
+        const backdrop = document.querySelector('#gmaps-mobile-layer-backdrop');
+        if (backdrop) backdrop.classList.remove('open');
+      }
+    }
+
+    mapInstance.on('dragstart', (e) => {
+      autoCollapseLayerPanel(e);
+      closeMobileSheetOnMapPan(e);
       collapseLegendDesc();
     });
     mapInstance.on('touchstart', () => {
-      autoCollapseLayerPanel();
       collapseLegendDesc();
     });
     mapInstance.on('click', (e) => {
-      autoCollapseLayerPanel();
+      autoCollapseLayerPanel(e);
+      closeMobileSheetOnMapPan(e);
       collapseLegendDesc();
       if (windFieldLayer && windFieldLayer.isVisible()) {
         const w = windFieldLayer.getWindAtPoint(e.lngLat.lat, e.lngLat.lng);
@@ -1122,6 +1170,19 @@ export function createMapViewer(options) {
       if (zoom >= 8.0 && zoom <= 12.5) {
         clearTimeout(weatherUpdateTimer);
         weatherUpdateTimer = setTimeout(updateProvinceWeather, 200);
+      }
+    });
+
+    mapInstance.on('rotate', () => {
+      const b = mapInstance.getBearing();
+      window.dispatchEvent(new CustomEvent('thaiflood:map-rotate', { detail: { bearing: b } }));
+      if (options.onMapRotate) options.onMapRotate(b);
+    });
+
+    window.addEventListener('thaiflood:reset-north', () => {
+      if (mapInstance) {
+        mapInstance.rotateTo(0, { duration: 400 });
+        showToast('ปรับแผนที่ระนาบทิศเหนือ (North-up)', '🧭');
       }
     });
   }
@@ -1245,7 +1306,7 @@ export function createMapViewer(options) {
     // 4. GFS Precipitation Model Layer (NOAA NCEP)
     mapInstance.addSource('thai-gfs', {
       type: 'geojson',
-      data: { type: 'FeatureCollection', features: [] }
+      data: buildGFSGeoJSON(cachedNWPData, currentGFSDay)
     });
 
     mapInstance.addLayer({
@@ -1284,7 +1345,7 @@ export function createMapViewer(options) {
     // 5. ECMWF Precipitation Model Layer (Adjustable Days)
     mapInstance.addSource('thai-ecmwf', {
       type: 'geojson',
-      data: { type: 'FeatureCollection', features: [] }
+      data: buildECMWFGeoJSON(cachedNWPData, currentECMWFDay)
     });
 
     mapInstance.addLayer({
@@ -1413,7 +1474,7 @@ export function createMapViewer(options) {
     }
 
     // Evaluate against specific dynamic seasonal Rule Curve (Upper & Lower Rule Curves)
-    const rc = evaluateDamRuleCurve(damObj, damObj.date || new Date());
+    const rc = evaluateDamRuleCurve(damObj, damObj.rawDate || damObj.date || new Date());
     const urc = rc ? rc.urcPercent : 80;
     const lrc = rc ? rc.lrcPercent : 30;
     const zone = rc ? rc.zone : (p > urc ? 'above_urc' : (p < lrc ? 'below_lrc' : 'normal'));
@@ -1484,6 +1545,26 @@ export function createMapViewer(options) {
     }
   }
 
+  function updateDamZoomGating() {
+    if (!mapInstance) return;
+    const isDamsVisible = activeLegendLayers.has('dams');
+    const zoom = mapInstance.getZoom();
+    const showMedium = zoom >= 8.5;
+
+    damMarkers.forEach((m) => {
+      const el = m.getElement();
+      if (!isDamsVisible) {
+        el.style.display = 'none';
+        return;
+      }
+      if (el.classList.contains('is-medium-reservoir')) {
+        el.style.display = showMedium ? 'flex' : 'none';
+      } else {
+        el.style.display = 'flex';
+      }
+    });
+  }
+
   function renderDamLayers() {
     if (!damsData || damsData.length === 0) return;
     const { damPoints, reservoirPolygons } = buildDamGeoJSON(damsData);
@@ -1498,6 +1579,9 @@ export function createMapViewer(options) {
       id: 'layer-reservoirs-fill',
       type: 'fill',
       source: 'thai-reservoirs',
+      layout: {
+        visibility: 'visible'
+      },
       paint: {
         'fill-color': '#0284c7',
         'fill-opacity': 0.65
@@ -1508,6 +1592,9 @@ export function createMapViewer(options) {
       id: 'layer-reservoirs-stroke',
       type: 'line',
       source: 'thai-reservoirs',
+      layout: {
+        visibility: 'visible'
+      },
       paint: {
         'line-color': '#0369a1',
         'line-width': 2
@@ -1549,22 +1636,39 @@ export function createMapViewer(options) {
 
     damsData.forEach((dam) => {
       const st = getDamStatusInfo(dam);
+      const isMedium = !!dam.isMediumReservoir;
       const el = document.createElement('div');
-      el.className = `gmaps-dam-marker-pin status-${st.level}`;
+      el.className = `gmaps-dam-marker-pin status-${st.level} ${isMedium ? 'is-medium-reservoir' : 'is-major-dam'}`;
       el.setAttribute('data-id', dam.id);
       el.title = `${dam.name} (${dam.province}) - ความจุน้ำ ${dam.percentStorage}% [สถานะ: ${st.label}]`;
-      el.innerHTML = `
-        <div class="dam-pin-badge" style="filter: drop-shadow(0 2px 6px ${st.shadow});">
-          <svg class="dam-pin-svg" viewBox="0 0 28 28" width="28" height="28" fill="none">
-            <circle cx="14" cy="14" r="13" fill="${st.color}" stroke="#ffffff" stroke-width="2"/>
-            <path d="M7 11C7 11 10.5 9 14 9C17.5 9 21 11 21 11V13L19 19H9L7 13V11Z" fill="#ffffff"/>
-            <line x1="11" y1="11" x2="11" y2="19" stroke="${st.color}" stroke-width="1.8"/>
-            <line x1="14" y1="11" x2="14" y2="19" stroke="${st.color}" stroke-width="1.8"/>
-            <line x1="17" y1="11" x2="17" y2="19" stroke="${st.color}" stroke-width="1.8"/>
-          </svg>
-          <span class="dam-pin-name" style="border: 1px solid ${st.badgeBorder}; color: ${st.nameColor}; background: rgba(255, 255, 255, 0.95);">${dam.shortName || dam.name}</span>
-        </div>
-      `;
+
+      if (isMedium) {
+        // Minimalist Medium Reservoir Symbol: 20px circle with water wave glyph
+        el.innerHTML = `
+          <div class="dam-pin-badge badge-reservoir" style="filter: drop-shadow(0 1.5px 4px ${st.shadow});">
+            <svg class="dam-pin-svg reservoir-svg" viewBox="0 0 22 22" width="22" height="22" fill="none">
+              <circle cx="11" cy="11" r="10" fill="${st.color}" stroke="#ffffff" stroke-width="1.8"/>
+              <path d="M5.5 9.5C7.5 8.2 9.5 8.2 11 9.5C12.5 10.8 14.5 10.8 16.5 9.5" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"/>
+              <path d="M5.5 13C7.5 11.7 9.5 11.7 11 13C12.5 14.3 14.5 14.3 16.5 13" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+            <span class="dam-pin-name" style="border: 1px solid ${st.badgeBorder}; color: ${st.nameColor}; background: rgba(255, 255, 255, 0.95);">${dam.shortName || dam.name}</span>
+          </div>
+        `;
+      } else {
+        // Minimalist Major Dam Symbol: 26px circle with dam barrier SVG glyph
+        el.innerHTML = `
+          <div class="dam-pin-badge badge-dam" style="filter: drop-shadow(0 2px 6px ${st.shadow});">
+            <svg class="dam-pin-svg dam-svg" viewBox="0 0 26 26" width="26" height="26" fill="none">
+              <circle cx="13" cy="13" r="12" fill="${st.color}" stroke="#ffffff" stroke-width="2"/>
+              <path d="M6 10C6 10 9.5 8 13 8C16.5 8 20 10 20 10V12L18 17.5H8L6 12V10Z" fill="#ffffff"/>
+              <line x1="10" y1="10" x2="10" y2="17.5" stroke="${st.color}" stroke-width="1.6"/>
+              <line x1="13" y1="10" x2="13" y2="17.5" stroke="${st.color}" stroke-width="1.6"/>
+              <line x1="16" y1="10" x2="16" y2="17.5" stroke="${st.color}" stroke-width="1.6"/>
+            </svg>
+            <span class="dam-pin-name" style="border: 1px solid ${st.badgeBorder}; color: ${st.nameColor}; background: rgba(255, 255, 255, 0.95);">${dam.shortName || dam.name}</span>
+          </div>
+        `;
+      }
 
       el.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1579,6 +1683,9 @@ export function createMapViewer(options) {
       damMarkers.push(marker);
     });
 
+    activeLegendLayers.add('dams');
+    updateDamZoomGating();
+
     mapInstance.on('click', 'layer-reservoirs-fill', (e) => {
       const p = e.features[0].properties;
       const dam = damsData.find((d) => String(d.id) === String(p.id)) || p;
@@ -1592,7 +1699,6 @@ export function createMapViewer(options) {
     mapInstance.on('mouseleave', 'layer-reservoirs-fill', () => {
       mapInstance.getCanvas().style.cursor = '';
     });
-    activeLegendLayers.add('dams');
     updateBottomLegendBar();
   }
 
@@ -1690,6 +1796,9 @@ export function createMapViewer(options) {
       type: 'circle',
       source: 'thai-telemetry-stations',
       filter: ['==', ['get', 'status'], 'critical'],
+      layout: {
+        visibility: 'visible'
+      },
       paint: {
         'circle-color': '#d93025',
         'circle-radius': 11,
@@ -1703,6 +1812,9 @@ export function createMapViewer(options) {
       id: 'layer-stations-circle',
       type: 'circle',
       source: 'thai-telemetry-stations',
+      layout: {
+        visibility: 'visible'
+      },
       paint: {
         'circle-color': [
           'match',
@@ -1724,6 +1836,8 @@ export function createMapViewer(options) {
         'circle-stroke-color': '#ffffff'
       }
     });
+
+    activeLegendLayers.add('stations');
 
     mapInstance.on('click', 'layer-stations-circle', (e) => {
       const feature = e.features[0];
@@ -1753,17 +1867,21 @@ export function createMapViewer(options) {
 
   // FIXED: Inner rotation on North-pointing SVG arrow so bearing points correctly!
   function renderFlowDirectionArrows() {
+    flowMarkers.forEach((m) => m.remove());
+    flowMarkers.length = 0;
+
     const flowPoints = generateFlowVectorPoints(basinsData.features);
+    const isFlowVisible = activeLegendLayers.has('flow-direction');
 
     flowPoints.features.forEach((pt) => {
       const outer = document.createElement('div');
       outer.className = 'gmaps-flow-arrow-wrap';
-      outer.style.display = 'none';
+      outer.style.display = isFlowVisible ? 'flex' : 'none';
 
       const inner = document.createElement('div');
       inner.className = 'gmaps-flow-arrow-icon';
       inner.style.transform = `rotate(${pt.properties.bearing}deg)`;
-      inner.title = `${pt.properties.riverName}: ${pt.properties.description}`;
+      inner.title = `${pt.properties.riverName || 'ทิศทางกระแสน้ำ'}: ${pt.properties.description || ''}`;
 
       inner.innerHTML = `
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none">
@@ -1804,7 +1922,10 @@ export function createMapViewer(options) {
         }) + ' น.';
         window.__latestRadarTime = timeStr;
         const el = document.getElementById('radar-updated-time');
-        if (el) el.textContent = ` (อัปเดต: ${timeStr})`;
+        if (el) el.innerHTML = `🕒 ตรวจวัดเรดาร์ล่าสุด: <span class="radar-live-ts">${timeStr}</span> (TMD Radar ทุก 10 นาที)`;
+        document.querySelectorAll('.radar-live-ts').forEach((span) => {
+          span.textContent = timeStr;
+        });
       }
     } catch (err) {
       console.warn('RainViewer Radar refresh:', err.message);
@@ -1846,7 +1967,10 @@ export function createMapViewer(options) {
       }) + ' น.';
       window.__latestCloudTime = thaiTimeStr;
       const el = document.getElementById('clouds-updated-time');
-      if (el) el.textContent = ` (อัปเดต: ${thaiTimeStr})`;
+      if (el) el.innerHTML = `🕒 ภาพดาวเทียมล่าสุด: <span class="clouds-live-ts">${thaiTimeStr}</span> (Himawari-9 Clean IR ทุก 10 นาที)`;
+      document.querySelectorAll('.clouds-live-ts').forEach((span) => {
+        span.textContent = thaiTimeStr;
+      });
     } catch (err) {
       console.warn('NASA GIBS Himawari cloud refresh:', err.message);
     }
@@ -1937,20 +2061,35 @@ export function createMapViewer(options) {
       },
       description: 'สีของสัญลักษณ์เขื่อนสะท้อนตาม % ปริมาตรน้ำกักเก็บจริงเทียบเกณฑ์ควบคุม (Rule Curve) จากกรมชลประทานและ กฟผ.'
     },
-    'bma-roads': {
-      id: 'bma-roads',
-      name: 'เส้นทางน้ำท่วมถนน กทม.',
-      shortName: '🚗 ถนนน้ำท่วม กทม.',
-      icon: '🚗',
+    'doh-roads': {
+      id: 'doh-roads',
+      name: 'น้ำท่วมทางหลวงทั่วประเทศ (DOH)',
+      shortName: '🛣️ ทางหลวงน้ำท่วม (DOH)',
+      icon: '🛣️',
       hasDaySelector: false,
       colorScale: {
         type: 'chips',
         items: [
-          { color: '#dc2626', label: 'เสี่ยงท่วมสูง (> 15 ซม.)' },
-          { color: '#ea580c', label: 'เฝ้าระวังน้ำขัง (5-15 ซม.)' }
+          { color: '#dc2626', label: 'ผ่านไม่ได้ (น้ำท่วมสูง)' },
+          { color: '#ea580c', label: 'ผ่านได้ด้วยความระมัดระวัง' }
         ]
       },
-      description: 'ข้อมูลสำนักการระบายน้ำ กทม. แสดงแนวถนน 23 จุดเสี่ยง พร้อมปุ่มแจ้งเหตุ Traffy Fondue และสายด่วน 1555'
+      description: 'ข้อมูลกรมทางหลวง (DOH) รายงานจุดน้ำท่วมทางหลวงทั่วประเทศ พร้อมระดับน้ำ เส้นทางเลี่ยง และสายด่วน 1586 โทรฟรี 24 ชม.'
+    },
+    'bma-roads': {
+      id: 'bma-roads',
+      name: 'น้ำท่วมทางหลวงทั่วประเทศ (DOH)',
+      shortName: '🛣️ ทางหลวงน้ำท่วม',
+      icon: '🛣️',
+      hasDaySelector: false,
+      colorScale: {
+        type: 'chips',
+        items: [
+          { color: '#dc2626', label: 'ผ่านไม่ได้' },
+          { color: '#ea580c', label: 'ผ่านได้' }
+        ]
+      },
+      description: 'ข้อมูลกรมทางหลวง (DOH)'
     },
     'traffy-flood': {
       id: 'traffy-flood',
@@ -2013,9 +2152,11 @@ export function createMapViewer(options) {
       if (lId === 'wind-field') return !!(windFieldLayer && windFieldLayer.canvas && windFieldLayer.canvas.style.display !== 'none');
       if (lId === 'traffic') return !!(mapInstance && mapInstance.getLayer('layer-traffic') && mapInstance.getLayoutProperty('layer-traffic', 'visibility') === 'visible');
       if (lId === 'dmr-geology') return isGeologyActive();
-      if (lId === 'dams') return !!(mapInstance && mapInstance.getLayer('layer-dams-circle') && mapInstance.getLayoutProperty('layer-dams-circle', 'visibility') === 'visible');
-      if (lId === 'bma-roads') return !!(mapInstance && mapInstance.getLayer('layer-bma-roads-line') && mapInstance.getLayoutProperty('layer-bma-roads-line', 'visibility') === 'visible');
-      if (lId === 'traffy-flood') return isTraffyFloodVisible;
+      if (lId === 'dams') return activeLegendLayers.has('dams');
+      if (lId === 'doh-roads' || lId === 'bma-roads') return activeLegendLayers.has('doh-roads');
+      if (lId === 'traffy-flood') return activeLegendLayers.has('traffy-flood');
+      if (lId === 'stations') return activeLegendLayers.has('stations');
+      if (lId === 'flow-direction') return activeLegendLayers.has('flow-direction');
       return false;
     };
 
@@ -2302,19 +2443,34 @@ export function createMapViewer(options) {
     });
   }
 
-  function renderBMARoadFloodLines() {
-    if (!mapInstance.getSource('source-bma-roads')) {
-      mapInstance.addSource('source-bma-roads', {
+  const dohHighwayMarkers = [];
+
+  function renderDOHHighwayFloodLines() {
+    activeLegendLayers.add('doh-roads');
+
+    // Requirement 2: Filter to show ONLY flooded highways (waterDepthCm > 0)
+    const floodedFeatures = (dohFloodData.features || []).filter(
+      (f) => f.properties && f.properties.waterDepthCm > 0
+    );
+    const filteredDohData = {
+      ...dohFloodData,
+      features: floodedFeatures
+    };
+
+    if (!mapInstance.getSource('source-doh-roads')) {
+      mapInstance.addSource('source-doh-roads', {
         type: 'geojson',
-        data: bmaFloodRoadLines
+        data: filteredDohData
       });
+    } else {
+      mapInstance.getSource('source-doh-roads').setData(filteredDohData);
     }
 
-    if (!mapInstance.getLayer('layer-bma-roads-glow')) {
+    if (!mapInstance.getLayer('layer-doh-roads-glow')) {
       mapInstance.addLayer({
-        id: 'layer-bma-roads-glow',
+        id: 'layer-doh-roads-glow',
         type: 'line',
-        source: 'source-bma-roads',
+        source: 'source-doh-roads',
         layout: {
           'line-cap': 'round',
           'line-join': 'round',
@@ -2322,11 +2478,9 @@ export function createMapViewer(options) {
         },
         paint: {
           'line-color': [
-            'match',
-            ['get', 'riskLevel'],
-            'critical', '#ff1744',
-            'warning', '#ff9100',
-            '#00e5ff'
+            'case',
+            ['==', ['get', 'passable'], false], '#ff1744',
+            '#ff9100'
           ],
           'line-width': 14,
           'line-opacity': 0.65,
@@ -2335,11 +2489,11 @@ export function createMapViewer(options) {
       });
     }
 
-    if (!mapInstance.getLayer('layer-bma-roads-line')) {
+    if (!mapInstance.getLayer('layer-doh-roads-line')) {
       mapInstance.addLayer({
-        id: 'layer-bma-roads-line',
+        id: 'layer-doh-roads-line',
         type: 'line',
-        source: 'source-bma-roads',
+        source: 'source-doh-roads',
         layout: {
           'line-cap': 'round',
           'line-join': 'round',
@@ -2347,11 +2501,9 @@ export function createMapViewer(options) {
         },
         paint: {
           'line-color': [
-            'match',
-            ['get', 'riskLevel'],
-            'critical', '#ff1744',
-            'warning', '#ff9100',
-            '#0284c7'
+            'case',
+            ['==', ['get', 'passable'], false], '#dc2626',
+            '#ea580c'
           ],
           'line-width': 6,
           'line-opacity': 0.95
@@ -2359,12 +2511,11 @@ export function createMapViewer(options) {
       });
     }
 
-    // Solid Glowing Neon Core Line (Requirement 9: Solid Line & Neon Glow, No Dashes)
-    if (!mapInstance.getLayer('layer-bma-roads-core')) {
+    if (!mapInstance.getLayer('layer-doh-roads-core')) {
       mapInstance.addLayer({
-        id: 'layer-bma-roads-core',
+        id: 'layer-doh-roads-core',
         type: 'line',
-        source: 'source-bma-roads',
+        source: 'source-doh-roads',
         layout: {
           'line-cap': 'round',
           'line-join': 'round',
@@ -2378,27 +2529,106 @@ export function createMapViewer(options) {
       });
     }
 
-    ['layer-bma-roads-line', 'layer-bma-roads-core'].forEach((layerId) => {
+    // Render official Department of Highways shield marker pins (สัญลักษณ์กรมทางหลวง)
+    dohHighwayMarkers.forEach((m) => m.remove());
+    dohHighwayMarkers.length = 0;
+
+    floodedFeatures.forEach((feature) => {
+      const p = feature.properties;
+      const coords = feature.geometry.coordinates;
+      if (!coords || coords.length === 0) return;
+      const midIdx = Math.floor(coords.length / 2);
+      const [lng, lat] = coords[midIdx];
+
+      const el = document.createElement('div');
+      el.className = 'doh-highway-marker-pin';
+      el.setAttribute('data-id', p.id);
+      el.title = `[กรมทางหลวง] ${p.highwayNo} (${p.routeName}) กม. ${p.kmRange} - ${p.statusLabel}`;
+
+      const isPassable = !!p.passable;
+      const statusPillClass = isPassable ? 'status-passable' : 'status-impassable';
+      const statusText = isPassable
+        ? `⚠️ ท่วม ${p.waterDepthCm} ซม.`
+        : `⛔ ผ่านไม่ได้ (${p.waterDepthCm} ซม.)`;
+
+      el.innerHTML = `
+        <div class="doh-shield-card">
+          <div class="doh-shield-header">
+            <svg class="doh-crest-svg" viewBox="0 0 24 24" fill="none">
+              <!-- Official DOH Milestone Shield Emblem -->
+              <path d="M12 2L4 5V12C4 16.5 7.5 20.5 12 22C16.5 20.5 20 16.5 20 12V5L12 2Z" fill="#0369a1" stroke="#38bdf8" stroke-width="1.4"/>
+              <path d="M9 17L11 9H13L15 17H9Z" fill="#ffffff"/>
+              <line x1="12" y1="11" x2="12" y2="13" stroke="#0369a1" stroke-width="1.2"/>
+              <line x1="12" y1="14.5" x2="12" y2="16.5" stroke="#0369a1" stroke-width="1.2"/>
+            </svg>
+            <span class="doh-route-label">${p.highwayNo}</span>
+          </div>
+          <div class="doh-status-pill ${statusPillClass}">
+            ${statusText}
+          </div>
+          <div class="doh-shield-arrow-down"></div>
+        </div>
+      `;
+
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (options.onStationSelect) {
+          options.onStationSelect({
+            isDohRoad: true,
+            id: p.id,
+            highwayNo: p.highwayNo,
+            routeName: p.routeName,
+            section: p.section,
+            kmRange: p.kmRange,
+            province: p.province,
+            amphoe: p.amphoe,
+            waterDepthCm: p.waterDepthCm,
+            passable: p.passable,
+            statusLabel: p.statusLabel,
+            severity: p.severity,
+            cause: p.cause,
+            detour: p.detour,
+            reportedTime: p.reportedTime,
+            agency: p.agency || 'กรมทางหลวง (DOH)',
+            lat,
+            lng
+          });
+        }
+      });
+
+      const isDohVisible = activeLegendLayers.has('doh-roads');
+      el.style.display = isDohVisible ? 'flex' : 'none';
+
+      const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+        .setLngLat([lng, lat])
+        .addTo(mapInstance);
+
+      dohHighwayMarkers.push(marker);
+    });
+
+    ['layer-doh-roads-line', 'layer-doh-roads-core'].forEach((layerId) => {
       mapInstance.on('click', layerId, (e) => {
         const p = e.features[0].properties;
         if (options.onStationSelect) {
           options.onStationSelect({
-            isRoad: true,
+            isDohRoad: true,
             id: p.id,
-            road: p.road,
-            segment: p.segment,
-            district: p.district,
+            highwayNo: p.highwayNo,
+            routeName: p.routeName,
+            section: p.section,
+            kmRange: p.kmRange,
+            province: p.province,
+            amphoe: p.amphoe,
             waterDepthCm: p.waterDepthCm,
-            lengthKm: p.lengthKm,
-            floodedLanes: p.floodedLanes,
-            trafficImpact: p.trafficImpact,
+            passable: p.passable,
+            statusLabel: p.statusLabel,
+            severity: p.severity,
             cause: p.cause,
-            riskLevel: p.riskLevel,
-            warningBadge: p.warningBadge,
-            lastUpdated: p.lastUpdated,
+            detour: p.detour,
+            reportedTime: p.reportedTime,
+            agency: p.agency || 'กรมทางหลวง (DOH)',
             lat: e.lngLat.lat,
-            lng: e.lngLat.lng,
-            province: 'กรุงเทพมหานคร'
+            lng: e.lngLat.lng
           });
         }
       });
@@ -2410,7 +2640,7 @@ export function createMapViewer(options) {
         mapInstance.getCanvas().style.cursor = '';
       });
     });
-    activeLegendLayers.add('bma-roads');
+    activeLegendLayers.add('doh-roads');
     updateBottomLegendBar();
   }
 
@@ -2524,11 +2754,20 @@ export function createMapViewer(options) {
 
   async function initTraffyFloodLayer() {
     try {
-      traffyFloodGeoJSON = await getTraffyFloodGeoJSON();
+      // 1. Immediately render seed markers synchronously to avoid blank map
+      traffyFloodGeoJSON = getSeedTraffyFloodGeoJSON();
       if (isTraffyFloodVisible) {
         renderTraffyFloodMarkers(traffyFloodGeoJSON);
         activeLegendLayers.add('traffy-flood');
         updateBottomLegendBar();
+      }
+      // 2. Fetch live data asynchronously in background
+      const liveGeo = await getTraffyFloodGeoJSON();
+      if (liveGeo && liveGeo.features && liveGeo.features.length > 0) {
+        traffyFloodGeoJSON = liveGeo;
+        if (isTraffyFloodVisible) {
+          renderTraffyFloodMarkers(traffyFloodGeoJSON);
+        }
       }
     } catch (err) {
       console.error('Failed to load Traffy Fondue Flood data:', err);
@@ -2569,29 +2808,47 @@ export function createMapViewer(options) {
       if (mapInstance.getLayer('layer-forecast-7d-fill')) mapInstance.setLayoutProperty('layer-forecast-7d-fill', 'visibility', vis);
       if (mapInstance.getLayer('layer-forecast-7d-stroke')) mapInstance.setLayoutProperty('layer-forecast-7d-stroke', 'visibility', vis);
     } else if (layerId === 'flow-direction') {
+      if (flowMarkers.length === 0) {
+        renderFlowDirectionArrows();
+      }
       flowMarkers.forEach((m) => {
         m.getElement().style.display = isVisible ? 'flex' : 'none';
       });
+      if (isVisible) {
+        showToast('เปิดเลเยอร์เวกเตอร์ทิศทางการไหลของน้ำ (Flow Vectors)', '🌊');
+        activeLegendLayers.add('flow-direction');
+      } else {
+        activeLegendLayers.delete('flow-direction');
+      }
+      updateBottomLegendBar();
     } else if (layerId === 'dams') {
+      if (isVisible) activeLegendLayers.add('dams'); else activeLegendLayers.delete('dams');
+      if (damMarkers.length === 0 && damsData && damsData.length > 0) {
+        renderDamLayers();
+      }
       if (mapInstance.getLayer('layer-reservoirs-fill')) mapInstance.setLayoutProperty('layer-reservoirs-fill', 'visibility', vis);
       if (mapInstance.getLayer('layer-reservoirs-stroke')) mapInstance.setLayoutProperty('layer-reservoirs-stroke', 'visibility', vis);
-      if (mapInstance.getLayer('layer-dams-symbol')) mapInstance.setLayoutProperty('layer-dams-symbol', 'visibility', vis);
-      if (mapInstance.getLayer('layer-dams-circle')) mapInstance.setLayoutProperty('layer-dams-circle', 'visibility', vis);
-      if (mapInstance.getLayer('layer-dams-glow')) mapInstance.setLayoutProperty('layer-dams-glow', 'visibility', vis);
-      if (mapInstance.getLayer('layer-dams-labels')) mapInstance.setLayoutProperty('layer-dams-labels', 'visibility', vis);
-      damMarkers.forEach((m) => {
-        m.getElement().style.display = isVisible ? 'flex' : 'none';
-      });
-      if (isVisible) activeLegendLayers.add('dams'); else activeLegendLayers.delete('dams');
+      // Strictly keep canvas symbol layer hidden at all times to prevent duplicate icon stacking
+      if (mapInstance.getLayer('layer-dams-symbol')) mapInstance.setLayoutProperty('layer-dams-symbol', 'visibility', 'none');
+      if (mapInstance.getLayer('layer-dams-circle')) mapInstance.setLayoutProperty('layer-dams-circle', 'visibility', 'none');
+      if (mapInstance.getLayer('layer-dams-glow')) mapInstance.setLayoutProperty('layer-dams-glow', 'visibility', 'none');
+      if (mapInstance.getLayer('layer-dams-labels')) mapInstance.setLayoutProperty('layer-dams-labels', 'visibility', 'none');
+      updateDamZoomGating();
       updateBottomLegendBar();
     } else if (layerId === 'traffic') {
-      if (mapInstance.getLayer('layer-traffic')) {
-        mapInstance.setLayoutProperty('layer-traffic', 'visibility', vis);
-        if (isVisible && mapInstance.getZoom() < 13) {
-          showToast('ชั้นข้อมูลการจราจรจะแสดงผลเมื่อซูมระดับ 13 ขึ้นไป (ระดับถนน/ชุมชน)', '🚦');
-        }
+      if (!mapInstance.getLayer('layer-traffic')) {
+        initTrafficLayer();
       }
       if (isVisible) activeLegendLayers.add('traffic'); else activeLegendLayers.delete('traffic');
+      if (mapInstance.getLayer('layer-traffic')) {
+        mapInstance.setLayoutProperty('layer-traffic', 'visibility', vis);
+        if (isVisible) {
+          if (mapInstance.getZoom() < 13) {
+            mapInstance.flyTo({ zoom: 13.2, speed: 1.2 });
+          }
+          showToast('เปิดชั้นข้อมูลสภาพการจราจรสด (Google Traffic)', '🚦');
+        }
+      }
       updateBottomLegendBar();
     } else if (layerId === 'dmr-geology') {
       if (mapInstance.getLayer('dmr-geology-layer')) mapInstance.setLayoutProperty('dmr-geology-layer', 'visibility', vis);
@@ -2601,9 +2858,14 @@ export function createMapViewer(options) {
       if (isVisible) activeLegendLayers.add('dmr-geology'); else activeLegendLayers.delete('dmr-geology');
       updateBottomLegendBar();
     } else if (layerId === 'stations') {
+      if (isVisible) activeLegendLayers.add('stations'); else activeLegendLayers.delete('stations');
       if (mapInstance.getLayer('layer-stations-glow')) mapInstance.setLayoutProperty('layer-stations-glow', 'visibility', vis);
       if (mapInstance.getLayer('layer-stations-circle')) mapInstance.setLayoutProperty('layer-stations-circle', 'visibility', vis);
       if (mapInstance.getLayer('layer-stations-inner')) mapInstance.setLayoutProperty('layer-stations-inner', 'visibility', vis);
+      if (isVisible) {
+        showToast('เปิดเลเยอร์สถานีวัดระดับน้ำโทรมาตร (สสน.)', '📍');
+      }
+      updateBottomLegendBar();
     } else if (layerId === 'sat-water') {
       if (mapInstance.getLayer('nasa-water-satellite-layer')) {
         mapInstance.setLayoutProperty('nasa-water-satellite-layer', 'visibility', vis);
@@ -2623,29 +2885,40 @@ export function createMapViewer(options) {
       if (isVisible) activeLegendLayers.add('sat-clouds'); else activeLegendLayers.delete('sat-clouds');
       updateBottomLegendBar();
     } else if (layerId === 'gfs') {
+      if (!cachedNWPData) {
+        initNWPForecastLayers();
+      }
       if (mapInstance.getLayer('layer-gfs-fill')) mapInstance.setLayoutProperty('layer-gfs-fill', 'visibility', vis);
       if (mapInstance.getLayer('layer-gfs-stroke')) mapInstance.setLayoutProperty('layer-gfs-stroke', 'visibility', vis);
       if (isVisible) activeLegendLayers.add('gfs'); else activeLegendLayers.delete('gfs');
       updateNWPFloatBar();
     } else if (layerId === 'ecmwf') {
+      if (!cachedNWPData) {
+        initNWPForecastLayers();
+      }
       if (mapInstance.getLayer('layer-ecmwf-fill')) mapInstance.setLayoutProperty('layer-ecmwf-fill', 'visibility', vis);
       if (mapInstance.getLayer('layer-ecmwf-stroke')) mapInstance.setLayoutProperty('layer-ecmwf-stroke', 'visibility', vis);
       if (isVisible) activeLegendLayers.add('ecmwf'); else activeLegendLayers.delete('ecmwf');
       updateNWPFloatBar();
-    } else if (layerId === 'bma-roads') {
-      if (mapInstance.getLayer('layer-bma-roads-glow')) mapInstance.setLayoutProperty('layer-bma-roads-glow', 'visibility', vis);
-      if (mapInstance.getLayer('layer-bma-roads-line')) mapInstance.setLayoutProperty('layer-bma-roads-line', 'visibility', vis);
-      if (mapInstance.getLayer('layer-bma-roads-core')) mapInstance.setLayoutProperty('layer-bma-roads-core', 'visibility', vis);
-      if (mapInstance.getLayer('layer-bma-roads-dash')) mapInstance.setLayoutProperty('layer-bma-roads-dash', 'visibility', vis);
+    } else if (layerId === 'doh-roads' || layerId === 'bma-roads') {
+      if (isVisible) activeLegendLayers.add('doh-roads'); else activeLegendLayers.delete('doh-roads');
+      if (!mapInstance.getLayer('layer-doh-roads-line')) {
+        renderDOHHighwayFloodLines();
+      }
+      if (mapInstance.getLayer('layer-doh-roads-glow')) mapInstance.setLayoutProperty('layer-doh-roads-glow', 'visibility', vis);
+      if (mapInstance.getLayer('layer-doh-roads-line')) mapInstance.setLayoutProperty('layer-doh-roads-line', 'visibility', vis);
+      if (mapInstance.getLayer('layer-doh-roads-core')) mapInstance.setLayoutProperty('layer-doh-roads-core', 'visibility', vis);
+      dohHighwayMarkers.forEach((m) => {
+        m.getElement().style.display = isVisible ? 'flex' : 'none';
+      });
       if (isVisible) {
-        showToast('เปิดเส้นทางน้ำท่วมถนน กทม. (23 เส้นทางหลัก)', '🚗');
-        const center = mapInstance.getCenter();
+        showToast('เปิดเลเยอร์น้ำท่วมทางหลวงทั่วประเทศ (กรมทางหลวง DOH สายด่วน 1586)', '🛣️');
         const zoom = mapInstance.getZoom();
-        if (zoom < 9.5 || Math.abs(center.lat - 13.75) > 1.2 || Math.abs(center.lng - 100.5) > 1.2) {
-          mapInstance.flyTo({ center: [100.56, 13.78], zoom: 11.4, speed: 1.2 });
+        const center = mapInstance.getCenter();
+        if (zoom > 9.0 && (Math.abs(center.lat - 13.75) < 0.4 && Math.abs(center.lng - 100.5) < 0.4)) {
+          mapInstance.flyTo({ center: [100.6, 14.4], zoom: 7.8, speed: 1.2 });
         }
       }
-      if (isVisible) activeLegendLayers.add('bma-roads'); else activeLegendLayers.delete('bma-roads');
       updateBottomLegendBar();
     } else if (layerId === 'traffy-flood') {
       setTraffyFloodVisibility(isVisible);
@@ -2660,6 +2933,9 @@ export function createMapViewer(options) {
       }
       updateBottomLegendBar();
     } else if (layerId === 'wind-field') {
+      if (!windFieldLayer) {
+        windFieldLayer = createWindFieldLayer(mapInstance);
+      }
       if (windFieldLayer) {
         windFieldLayer.setVisible(isVisible);
       }
@@ -2746,6 +3022,15 @@ export function createMapViewer(options) {
     element: container,
     locateMe: locateUser,
     flyToStation,
+    resetNorth: () => {
+      if (mapInstance) {
+        mapInstance.rotateTo(0, { duration: 400 });
+        showToast('ปรับแผนที่ระนาบทิศเหนือ (North-up)', '🧭');
+      }
+    },
+    getBearing: () => {
+      return mapInstance ? mapInstance.getBearing() : 0;
+    },
     toggleLayer: (layerId, isVisible) => {
       setLayerVisibility(layerId, isVisible);
     },

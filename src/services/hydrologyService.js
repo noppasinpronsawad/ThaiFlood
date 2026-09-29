@@ -31,8 +31,8 @@ export function generateFlowVectorPoints(riverFeatures) {
     const coords = feature.geometry.coordinates;
     if (coords.length < 2) return;
 
-    // Step to place 7-10 arrows cleanly along the river length
-    const step = Math.max(1, Math.floor(coords.length / 9));
+    // Step to place 16-20 arrows cleanly along the river length
+    const step = Math.max(1, Math.floor(coords.length / 18));
 
     for (let i = 0; i < coords.length - 1; i += step) {
       const [lon1, lat1] = coords[i];

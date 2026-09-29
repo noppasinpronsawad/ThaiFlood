@@ -41,9 +41,10 @@ export function createNavbar(options) {
       <div class="gmaps-search-dropdown" id="gmaps-search-dropdown"></div>
     </div>
 
-    <!-- Top-Right Collapsible Layer Toggle Menu Bar (Hide Menu Bar) -->
-    <div class="gmaps-layer-panel" id="gmaps-layer-panel">
-      <!-- Header / Hide Menu Bar Toggle -->
+    <!-- Top-Right Collapsible Layer Toggle Menu Bar & North Compass Control Stack -->
+    <div class="gmaps-layer-panel-stack" id="gmaps-layer-panel-stack">
+      <div class="gmaps-layer-panel" id="gmaps-layer-panel">
+        <!-- Header / Hide Menu Bar Toggle -->
       <div class="gmaps-layer-header" id="gmaps-layer-header" title="คลิกเพื่อย่อ/ขยายเมนูเลเยอร์">
         <div class="layer-header-title">
           <span class="layer-header-icon" aria-hidden="true">
@@ -69,7 +70,7 @@ export function createNavbar(options) {
               <span class="layer-dot dot-red"></span>
               <div class="layer-text-wrap">
                 <div class="layer-name">น้ำท่วมปัจจุบัน</div>
-                <div class="layer-desc">ขอบเขตน้ำล้นตลิ่งสดจากเซนเซอร์</div>
+                <div class="layer-desc">ขอบเขตน้ำล้นตลิ่ง · ล่าสุด: 29 ก.ย. 2026 01:00 น.</div>
               </div>
             </div>
             <div class="gmaps-switch">
@@ -84,7 +85,7 @@ export function createNavbar(options) {
               <span class="layer-dot dot-orange"></span>
               <div class="layer-text-wrap">
                 <div class="layer-name">เสี่ยงภัย 7 วัน</div>
-                <div class="layer-desc">คาดการณ์น้ำท่วมล่วงหน้า</div>
+                <div class="layer-desc">คาดการณ์ล่วงหน้า 7 วัน · ล่าสุด: 29 ก.ย. 2026 01:00 น.</div>
               </div>
             </div>
             <div class="gmaps-switch">
@@ -100,7 +101,7 @@ export function createNavbar(options) {
                 <span style="font-size: 15px;">🏢</span>
                 <div class="layer-text-wrap">
                   <div class="layer-name">เขื่อนและอ่างเก็บน้ำ</div>
-                  <div class="layer-desc">จุดเขื่อน & ผืนน้ำอ่างเก็บน้ำจริง</div>
+                  <div class="layer-desc">จุดเขื่อน & ผืนน้ำจริง · ล่าสุด: 29 ก.ย. 2026 06:00 น.</div>
                 </div>
               </div>
               <div class="gmaps-switch">
@@ -135,7 +136,7 @@ export function createNavbar(options) {
               <span class="layer-dot dot-blue"></span>
               <div class="layer-text-wrap">
                 <div class="layer-name">ทิศทางน้ำไหล</div>
-                <div class="layer-desc">ลูกศรเวกเตอร์ทิศทางกระแสน้ำ</div>
+                <div class="layer-desc">ลูกศรเวกเตอร์ทิศทางกระแสน้ำ · ล่าสุด: 29 ก.ย. 2026 01:00 น.</div>
               </div>
             </div>
             <div class="gmaps-switch">
@@ -150,7 +151,7 @@ export function createNavbar(options) {
               <span style="font-size: 14px;">📍</span>
               <div class="layer-text-wrap">
                 <div class="layer-name">สถานีวัดระดับน้ำ</div>
-                <div class="layer-desc">1,400+ จุดวัดโทรมาตร สสน.</div>
+                <div class="layer-desc">1,400+ จุดวัดโทรมาตร สสน. · ล่าสุด: 29 ก.ย. 2026 01:00 น.</div>
               </div>
             </div>
             <div class="gmaps-switch">
@@ -194,7 +195,7 @@ export function createNavbar(options) {
                 <span style="font-size: 14px;">📡</span>
                 <div class="layer-text-wrap">
                   <div class="layer-name">เรดาร์ตรวจฝนสด (TMD / RainViewer Radar)</div>
-                  <div class="layer-desc">ตรวจจับกลุ่มฝนและพายุสดแบบเรียลไทม์จากสถานีเรดาร์ทั่วไทย</div>
+                  <div class="layer-desc" id="desc-sat-water">ตรวจจับกลุ่มฝนสด · อัปเดตล่าสุด: <span class="radar-live-ts">29 ก.ย. 2026 01:20 น.</span></div>
                 </div>
               </div>
               <div class="gmaps-switch">
@@ -212,7 +213,7 @@ export function createNavbar(options) {
                 <span style="color:#dc2626; font-weight:700;">ฝนหนัก/ลูกเห็บ (>50 dBZ)</span>
               </div>
               <div class="legend-note">💡 <b>เรดาร์ Doppler:</b> ตรวจจับหยดน้ำฝนจริงที่ตกสู่พื้นดินทุก 10 นาที เชื่อมต่อเครือข่ายสถานีเรดาร์ กรมอุตุนิยมวิทยา (TMD)</div>
-              <div class="legend-timestamp" id="radar-updated-time" style="font-size: 11px; color: #0284c7; font-weight: 600; margin-top: 5px; display: flex; align-items: center; gap: 4px;">🕒 ตรวจวัดเรดาร์ล่าสุด: 26 ก.ย. 2026 21:30 น. (TMD Radar ทุก 10 นาที)</div>
+              <div class="legend-timestamp" id="radar-updated-time" style="font-size: 11px; color: #0284c7; font-weight: 600; margin-top: 5px; display: flex; align-items: center; gap: 4px;">🕒 ตรวจวัดเรดาร์ล่าสุด: <span class="radar-live-ts">29 ก.ย. 2026 01:20 น.</span> (TMD Radar ทุก 10 นาที)</div>
             </div>
           </div>
 
@@ -223,7 +224,7 @@ export function createNavbar(options) {
                 <span style="font-size: 14px;">☁️</span>
                 <div class="layer-text-wrap">
                   <div class="layer-name">ดาวเทียมกลุ่มเมฆ (Himawari)</div>
-                  <div class="layer-desc">กลุ่มเมฆฝน & พายุแบบสด (Clean IR)</div>
+                  <div class="layer-desc" id="desc-sat-clouds">กลุ่มเมฆฝนสด Clean IR · อัปเดตล่าสุด: <span class="clouds-live-ts">29 ก.ย. 2026 01:20 น.</span></div>
                 </div>
               </div>
               <div class="gmaps-switch">
@@ -241,7 +242,7 @@ export function createNavbar(options) {
                 <span style="color:#dc2626; font-weight:700;">พายุ/ฝนหนักมาก</span>
               </div>
               <div class="legend-note">💡 เซนเซอร์ดาวเทียมสูง 35,786 กม. ความละเอียด 2 กม./px</div>
-              <div class="legend-timestamp" id="clouds-updated-time" style="font-size: 11px; color: #2563eb; font-weight: 600; margin-top: 5px; display: flex; align-items: center; gap: 4px;">🕒 ภาพดาวเทียมล่าสุด: 26 ก.ย. 2026 21:10 น. (Himawari-9 Clean IR ทุก 10 นาที)</div>
+              <div class="legend-timestamp" id="clouds-updated-time" style="font-size: 11px; color: #2563eb; font-weight: 600; margin-top: 5px; display: flex; align-items: center; gap: 4px;">🕒 ภาพดาวเทียมล่าสุด: <span class="clouds-live-ts">29 ก.ย. 2026 01:20 น.</span> (Himawari-9 Clean IR ทุก 10 นาที)</div>
             </div>
           </div>
 
@@ -252,7 +253,7 @@ export function createNavbar(options) {
                 <span style="font-size: 14px;">🇺🇸</span>
                 <div class="layer-text-wrap">
                   <div class="layer-name">โมเดลคาดการณ์ฝน GFS (NOAA - ปรับวันได้)</div>
-                  <div class="layer-desc">แบบจำลอง NOAA GFS (13 กม.) ปรับเปลี่ยนวันดูทิศทางฝนล่วงหน้า 7 วัน</div>
+                  <div class="layer-desc">แบบจำลอง NOAA GFS (13 กม.) ล่วงหน้า 7 วัน · ล่าสุด: 29 ก.ย. 2026 00:00 น.</div>
                 </div>
               </div>
               <div class="gmaps-switch">
@@ -291,7 +292,7 @@ export function createNavbar(options) {
                 <span style="font-size: 14px;">🇪🇺</span>
                 <div class="layer-text-wrap">
                   <div class="layer-name">โมเดลคาดการณ์ฝน ECMWF (ยุโรป - ปรับวันได้)</div>
-                  <div class="layer-desc">แบบจำลอง ECMWF IFS (9 กม.) ปรับเปลี่ยนวันดูทิศทางฝนล่วงหน้า 7 วัน</div>
+                  <div class="layer-desc">แบบจำลอง ECMWF IFS (9 กม.) ล่วงหน้า 7 วัน · ล่าสุด: 29 ก.ย. 2026 00:00 น.</div>
                 </div>
               </div>
               <div class="gmaps-switch">
@@ -323,33 +324,34 @@ export function createNavbar(options) {
             </div>
           </div>
 
-          <!-- 11. Bangkok Road Flood Lines (BMA Drainage) -->
+          <!-- 11. National Highway Flood Lines (DOH 1586) -->
           <div class="layer-item-wrapper">
-            <label class="gmaps-toggle-row" for="toggle-bma-roads">
+            <label class="gmaps-toggle-row" for="toggle-doh-roads">
               <div class="layer-info">
-                <span style="font-size: 14px;">🚗</span>
+                <span style="font-size: 14px;">🛣️</span>
                 <div class="layer-text-wrap">
-                  <div class="layer-name">เส้นทางน้ำท่วมถนน กทม. (23 เส้นทางหลัก)</div>
-                  <div class="layer-desc">แนวเส้นทางถนนที่มีน้ำท่วมขังบนผิวจราจรและทางลอด</div>
+                  <div class="layer-name">น้ำท่วมทางหลวงทั่วประเทศ (DOH)</div>
+                  <div class="layer-desc">จุดน้ำท่วมทางหลวง สัญลักษณ์ ทล. · ล่าสุด: 29 ก.ย. 2026 01:00 น.</div>
                 </div>
               </div>
               <div class="gmaps-switch">
-                <input type="checkbox" id="toggle-bma-roads" data-layer="bma-roads" checked />
+                <input type="checkbox" id="toggle-doh-roads" data-layer="doh-roads" checked />
                 <span class="switch-slider slider-red"></span>
               </div>
             </label>
-            <div class="layer-legend-box" id="legend-bma-roads" style="display: block;">
+            <div class="layer-legend-box" id="legend-doh-roads" style="display: block;">
               <div class="legend-row">
                 <span class="legend-color" style="background:#dc2626; height:4px; width:18px; border-radius:2px; display:inline-block;"></span>
-                <span><b>เส้นสีแดง:</b> น้ำท่วมขังวิกฤตบนผิวจราจร (20 - 35 ซม.) รถเล็กควรเลี่ยง</span>
+                <span><b>เส้นสีแดง:</b> การจราจรผ่านไม่ได้ (น้ำท่วมสูง)</span>
               </div>
               <div class="legend-row">
                 <span class="legend-color" style="background:#ea580c; height:4px; width:18px; border-radius:2px; display:inline-block;"></span>
-                <span><b>เส้นสีส้ม:</b> เฝ้าระวังน้ำท่วมขังรอระบาย (10 - 20 ซม.)</span>
+                <span><b>เส้นสีส้ม:</b> ผ่านได้ด้วยความระมัดระวัง</span>
               </div>
-              <div class="legend-note">💡 ข้อมูล <b>สำนักการระบายน้ำ กทม.</b> คลิกบนเส้นถนนเพื่อดูช่วงที่ท่วม ระดับน้ำ และกดแจ้งเหตุผ่าน Traffy Fondue & สายด่วน 1555</div>
-              <div class="legend-timestamp" id="bma-roads-updated-time" style="font-size: 11px; color: #b91c1c; font-weight: 600; margin-top: 5px; display: flex; align-items: center; gap: 4px;">📍 เกณฑ์เฝ้าระวัง 23 จุดเสี่ยงน้ำท่วมผิวจราจร (สำนักการระบายน้ำ กทม.)</div>
+              <div class="legend-note">💡 ข้อมูล <b>กรมทางหลวง (DOH)</b> แสดงเฉพาะเส้นทางที่น้ำท่วม พร้อมตราสัญลักษณ์ทางหลวง สายด่วน 1586</div>
             </div>
+            <!-- Keep hidden fallback for bma-roads -->
+            <input type="checkbox" id="toggle-bma-roads" data-layer="bma-roads" style="display:none;" />
           </div>
 
           <!-- 12. Traffy Fondue Road Flood Incidents (Minimalist Road Icon) -->
@@ -366,7 +368,7 @@ export function createNavbar(options) {
                 </span>
                 <div class="layer-text-wrap">
                   <div class="layer-name">น้ำท่วมขัง Traffy Fondue (กทม.)</div>
-                  <div class="layer-desc">รายงานจุดน้ำท่วมผิวจราจรสดจากประชาชนและเจ้าหน้าที่</div>
+                  <div class="layer-desc">รายงานจุดน้ำท่วมผิวจราจรสด · ล่าสุด: 29 ก.ย. 2026 01:15 น.</div>
                 </div>
               </div>
               <div class="gmaps-switch">
@@ -394,7 +396,7 @@ export function createNavbar(options) {
                 <span style="font-size: 14px;">🚦</span>
                 <div class="layer-text-wrap">
                   <div class="layer-name">สภาพการจราจรสด (Traffic Flow)</div>
-                  <div class="layer-desc">แสดงสภาพการจราจรสด (แสดงอัตโนมัติเมื่อซูมระดับ 13 ขึ้นไป)</div>
+                  <div class="layer-desc">สภาพการจราจรสดทั่วประเทศ · ตรวจสอบล่าสุด: 29 ก.ย. 2026 01:20 น.</div>
                 </div>
               </div>
               <div class="gmaps-switch">
@@ -415,7 +417,7 @@ export function createNavbar(options) {
                 <span class="legend-color" style="background:#dc2626; height:4px; width:18px; border-radius:2px; display:inline-block;"></span>
                 <span><b>สีแดง:</b> การจราจรติดขัดมาก (< 20 กม./ชม.)</span>
               </div>
-              <div class="legend-note">💡 ระบบจะแสดงเส้นสีการจราจรอัตโนมัติเมื่อซูมเข้าสู่ระดับถนนหรือชุมชน (Zoom 13 ขึ้นไป)</div>
+              <div class="legend-note">💡 ข้อมูลสภาพการจราจรสดแบบ Real-time แสดงเส้นทางหลักและทางหลวงทั่วประเทศ</div>
             </div>
           </div>
 
@@ -449,6 +451,34 @@ export function createNavbar(options) {
         </div>
       </div>
     </div>
+
+    <!-- North Button (ขนาดเท่าปุ่มย่อ ขยาย บริเวณด้านล่างของส่วนเลือก layer ทั้ง mobile และ desktop) -->
+    <div class="gmaps-north-container" id="gmaps-north-container">
+      <button class="gmaps-north-btn" id="gmaps-btn-north" title="ปรับทิศเหนือ (Reset North)" aria-label="ปรับระนาบทิศเหนือ" type="button">
+        <svg class="gmaps-north-compass-icon" width="22" height="22" viewBox="0 0 32 32" fill="none">
+          <!-- Subtle Outer Dial Ring -->
+          <circle cx="16" cy="16" r="14" fill="none" stroke="#e2e8f0" stroke-width="1.2" opacity="0.8" />
+          <!-- Cardinal Direction Ticks -->
+          <line x1="16" y1="2" x2="16" y2="4.5" stroke="#ef4444" stroke-width="1.8" stroke-linecap="round" />
+          <line x1="16" y1="27.5" x2="16" y2="30" stroke="#94a3b8" stroke-width="1.4" stroke-linecap="round" />
+          <line x1="2" y1="16" x2="4.5" y2="16" stroke="#cbd5e1" stroke-width="1.4" stroke-linecap="round" />
+          <line x1="27.5" y1="16" x2="30" y2="16" stroke="#cbd5e1" stroke-width="1.4" stroke-linecap="round" />
+          <!-- 3D Shaded Compass Needle -->
+          <!-- North Pointer (Ruby Red) -->
+          <polygon points="16,4.5 12,16 16,13.8" fill="#ef4444" />
+          <polygon points="16,4.5 20,16 16,13.8" fill="#dc2626" />
+          <!-- South Pointer (Slate Metallic) -->
+          <polygon points="16,27.5 12,16 16,18.2" fill="#94a3b8" />
+          <polygon points="16,27.5 20,16 16,18.2" fill="#64748b" />
+          <!-- Center Pivot Casing & Ruby Core -->
+          <circle cx="16" cy="16" r="3" fill="#ffffff" stroke="#1e293b" stroke-width="1" />
+          <circle cx="16" cy="16" r="1.3" fill="#dc2626" />
+          <!-- Cardinal 'N' Label on Red Pointer -->
+          <text x="16" y="11" font-size="5" font-weight="900" fill="#ffffff" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">N</text>
+        </svg>
+      </button>
+    </div>
+  </div>
 
     <!-- Left Slide-in Drawer Menu (Requirement 5) -->
     <div class="gmaps-drawer-backdrop" id="gmaps-drawer-backdrop"></div>
@@ -640,6 +670,21 @@ export function createNavbar(options) {
         </div>
       </div>
     </aside>
+
+    <!-- Mobile Google Maps Style "รายละเอียดแผนที่" Bottom Sheet (Matching Attached Image) -->
+    <div class="gmaps-mobile-layer-backdrop" id="gmaps-mobile-layer-backdrop"></div>
+    <div class="gmaps-mobile-layer-sheet" id="gmaps-mobile-layer-sheet" role="dialog" aria-modal="true" aria-label="รายละเอียดแผนที่">
+      <div class="mobile-layer-sheet-handle-bar">
+        <div class="mobile-layer-sheet-handle"></div>
+      </div>
+      <div class="mobile-layer-sheet-header">
+        <h3 class="mobile-layer-sheet-title">รายละเอียดแผนที่</h3>
+        <button class="mobile-layer-sheet-close" id="btn-close-mobile-layers" type="button" aria-label="ปิดรายละเอียดแผนที่">✕</button>
+      </div>
+      <div class="mobile-layer-sheet-body">
+        <div class="mobile-layer-grid" id="mobile-layer-grid"></div>
+      </div>
+    </div>
   `;
 
   // Search logic
@@ -865,12 +910,250 @@ export function createNavbar(options) {
     }
   });
 
+  // Mobile 3-Column Grid "รายละเอียดแผนที่" Layer Definitions (Matching Attached Screenshot)
+  const MOBILE_LAYER_ITEMS = [
+    {
+      id: 'flood-now',
+      name: 'น้ำท่วมปัจจุบัน',
+      iconSvg: `<svg viewBox="0 0 48 48" width="36" height="36" fill="none">
+        <rect width="48" height="48" rx="12" fill="#e0f2fe"/>
+        <path d="M8 26C12 23 16 23 20 26C24 29 28 29 32 26C36 23 40 23 44 26V38C44 41 41 44 38 44H10C7 44 4 41 4 38V30C4 28 6 27 8 26Z" fill="#0284c7" opacity="0.3"/>
+        <path d="M6 31C10 28 15 28 19 31C23 34 27 34 31 31C35 28 40 28 44 31V38C44 41.3 41.3 44 38 44H10C6.7 44 4 41.3 4 38V33C4 32 5 31.3 6 31Z" fill="#0284c7"/>
+        <circle cx="24" cy="18" r="7" fill="#ef4444"/>
+        <circle cx="24" cy="18" r="4" fill="#ffffff"/>
+        <path d="M24 14V17M24 19V20" stroke="#ef4444" stroke-width="2" stroke-linecap="round"/>
+      </svg>`
+    },
+    {
+      id: 'traffic',
+      name: 'การจราจร',
+      iconSvg: `<svg viewBox="0 0 48 48" width="36" height="36" fill="none">
+        <rect width="48" height="48" rx="12" fill="#ecfdf5"/>
+        <path d="M10 24H38" stroke="#cbd5e1" stroke-width="12" stroke-linecap="round"/>
+        <path d="M24 10V38" stroke="#cbd5e1" stroke-width="12" stroke-linecap="round"/>
+        <path d="M10 24H24" stroke="#22c55e" stroke-width="4" stroke-linecap="round"/>
+        <path d="M24 24H38" stroke="#f59e0b" stroke-width="4" stroke-linecap="round"/>
+        <path d="M24 10V24" stroke="#ef4444" stroke-width="4" stroke-linecap="round"/>
+        <path d="M24 24V38" stroke="#22c55e" stroke-width="4" stroke-linecap="round"/>
+        <circle cx="24" cy="24" r="3" fill="#ffffff"/>
+      </svg>`
+    },
+    {
+      id: 'doh-roads',
+      name: 'น้ำท่วมทางหลวง',
+      iconSvg: `<svg viewBox="0 0 48 48" width="36" height="36" fill="none">
+        <rect width="48" height="48" rx="12" fill="#fef2f2"/>
+        <path d="M16 40L21 12H27L32 40H16Z" fill="#64748b"/>
+        <line x1="24" y1="14" x2="24" y2="20" stroke="#ffffff" stroke-width="2" stroke-dasharray="3 3"/>
+        <line x1="24" y1="24" x2="24" y2="38" stroke="#ffffff" stroke-width="2" stroke-dasharray="3 3"/>
+        <circle cx="24" cy="27" r="10" fill="#dc2626" stroke="#ffffff" stroke-width="2"/>
+        <path d="M19 27H29" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>`
+    },
+    {
+      id: 'dams',
+      name: 'เขื่อน & อ่างน้ำ',
+      iconSvg: `<svg viewBox="0 0 48 48" width="36" height="36" fill="none">
+        <rect width="48" height="48" rx="12" fill="#e0f2fe"/>
+        <path d="M10 20C10 20 16 16 24 16C32 16 38 20 38 20V24L34 36H14L10 24V20Z" fill="#0284c7"/>
+        <line x1="18" y1="20" x2="18" y2="36" stroke="#ffffff" stroke-width="2"/>
+        <line x1="24" y1="18" x2="24" y2="36" stroke="#ffffff" stroke-width="2"/>
+        <line x1="30" y1="20" x2="30" y2="36" stroke="#ffffff" stroke-width="2"/>
+        <path d="M6 38C12 36 18 36 24 38C30 40 36 40 42 38" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>`
+    },
+    {
+      id: 'stations',
+      name: 'สถานีวัดน้ำ',
+      iconSvg: `<svg viewBox="0 0 48 48" width="36" height="36" fill="none">
+        <rect width="48" height="48" rx="12" fill="#eff6ff"/>
+        <circle cx="24" cy="18" r="8" fill="#1a73e8"/>
+        <path d="M24 26V38" stroke="#1a73e8" stroke-width="3" stroke-linecap="round"/>
+        <path d="M16 38H32" stroke="#1a73e8" stroke-width="3" stroke-linecap="round"/>
+        <circle cx="24" cy="18" r="3.5" fill="#ffffff"/>
+        <path d="M14 12C11 15 11 21 14 24" stroke="#60a5fa" stroke-width="2" stroke-linecap="round"/>
+        <path d="M34 12C37 15 37 21 34 24" stroke="#60a5fa" stroke-width="2" stroke-linecap="round"/>
+      </svg>`
+    },
+    {
+      id: 'forecast-7d',
+      name: 'เสี่ยงภัย 7 วัน',
+      iconSvg: `<svg viewBox="0 0 48 48" width="36" height="36" fill="none">
+        <rect width="48" height="48" rx="12" fill="#fff7ed"/>
+        <path d="M24 9L39 36H9L24 9Z" fill="#f97316" stroke="#ea580c" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M24 19V27M24 31V32" stroke="#ffffff" stroke-width="2.5" stroke-linecap="round"/>
+        <rect x="29" y="8" width="14" height="12" rx="4" fill="#ea580c"/>
+        <text x="36" y="17" fill="#ffffff" font-size="8" font-weight="bold" text-anchor="middle">7D</text>
+      </svg>`
+    },
+    {
+      id: 'sat-water',
+      name: 'เรดาร์ฝนสด',
+      iconSvg: `<svg viewBox="0 0 48 48" width="36" height="36" fill="none">
+        <rect width="48" height="48" rx="12" fill="#ecfeff"/>
+        <circle cx="24" cy="24" r="16" stroke="#06b6d4" stroke-width="2" fill="#0891b2" fill-opacity="0.1"/>
+        <circle cx="24" cy="24" r="10" stroke="#06b6d4" stroke-width="1.5" stroke-dasharray="2 2"/>
+        <circle cx="24" cy="24" r="4" fill="#06b6d4"/>
+        <path d="M24 24L36 14" stroke="#0891b2" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M24 8A16 16 0 0 1 36 14" fill="#06b6d4" fill-opacity="0.25"/>
+      </svg>`
+    },
+    {
+      id: 'ecmwf',
+      name: 'พยากรณ์ฝน',
+      iconSvg: `<svg viewBox="0 0 48 48" width="36" height="36" fill="none">
+        <rect width="48" height="48" rx="12" fill="#eef2ff"/>
+        <path d="M14 26C11.8 26 10 24.2 10 22C10 20 11.5 18.3 13.5 18.1C14.3 14.6 17.4 12 21 12C25.4 12 29 15.6 29 20C29 20.3 29 20.7 28.9 21C30.7 21.2 32 22.7 32 24.5C32 26.4 30.4 28 28.5 28H14" fill="#6366f1"/>
+        <line x1="16" y1="32" x2="14" y2="38" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="22" y1="32" x2="20" y2="38" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="28" y1="32" x2="26" y2="38" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>`
+    },
+    {
+      id: 'traffy-flood',
+      name: 'Traffy Fondue',
+      iconSvg: `<svg viewBox="0 0 48 48" width="36" height="36" fill="none">
+        <rect width="48" height="48" rx="12" fill="#fffbeb"/>
+        <circle cx="24" cy="22" r="12" fill="#f59e0b"/>
+        <path d="M24 34L20 28H28L24 34Z" fill="#f59e0b"/>
+        <path d="M17 21L24 15L31 21" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="24" cy="23" r="2.5" fill="#ffffff"/>
+      </svg>`
+    },
+    {
+      id: 'wind-field',
+      name: 'กระแสลม',
+      iconSvg: `<svg viewBox="0 0 48 48" width="36" height="36" fill="none">
+        <rect width="48" height="48" rx="12" fill="#f0fdf4"/>
+        <path d="M8 18H28C31 18 33 16 33 14C33 12 31 10 28 10C25 10 24 12 24 13" stroke="#10b981" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M12 24H34C37 24 39 26 39 28C39 30 37 32 34 32C31 32 30 30 30 29" stroke="#10b981" stroke-width="2.5" stroke-linecap="round"/>
+        <path d="M8 30H22C24 30 25 31 25 32C25 33 24 34 22 34" stroke="#10b981" stroke-width="2" stroke-linecap="round"/>
+      </svg>`
+    },
+    {
+      id: 'flow-direction',
+      name: 'ทิศทางน้ำไหล',
+      iconSvg: `<svg viewBox="0 0 48 48" width="36" height="36" fill="none">
+        <rect width="48" height="48" rx="12" fill="#f0f9ff"/>
+        <path d="M12 14C18 14 20 24 26 24C32 24 34 14 40 14" stroke="#0284c7" stroke-width="3" stroke-linecap="round"/>
+        <path d="M12 26C18 26 20 36 26 36C32 36 34 26 40 26" stroke="#0284c7" stroke-width="3" stroke-linecap="round"/>
+        <path d="M36 22L41 26L36 30" fill="#0284c7"/>
+      </svg>`
+    },
+    {
+      id: 'dmr-geology',
+      name: 'ธรณีวิทยา',
+      iconSvg: `<svg viewBox="0 0 48 48" width="36" height="36" fill="none">
+        <rect width="48" height="48" rx="12" fill="#faf5ff"/>
+        <path d="M8 36L20 18L28 28L34 20L42 36H8Z" fill="#a855f7" opacity="0.3"/>
+        <path d="M8 36L18 22L26 32L32 24L40 36H8Z" fill="#9333ea"/>
+        <line x1="12" y1="32" x2="36" y2="32" stroke="#ffffff" stroke-width="1.8" stroke-dasharray="2 2"/>
+      </svg>`
+    }
+  ];
+
   // Collapsible Layer Menu Bar (Hide Menu Bar)
   const layerPanel = overlay.querySelector('#gmaps-layer-panel');
   const toggleBtn = overlay.querySelector('#btn-toggle-layer-panel');
   const toggleBtnText = toggleBtn.querySelector('.toggle-btn-text');
   const toggleBtnArrow = toggleBtn.querySelector('.toggle-btn-arrow');
   const layerHeader = overlay.querySelector('#gmaps-layer-header');
+
+  const mobileSheet = overlay.querySelector('#gmaps-mobile-layer-sheet');
+  const mobileBackdrop = overlay.querySelector('#gmaps-mobile-layer-backdrop');
+  const mobileCloseBtn = overlay.querySelector('#btn-close-mobile-layers');
+  const mobileGrid = overlay.querySelector('#mobile-layer-grid');
+
+  function openMobileLayerSheet() {
+    syncMobileCards();
+    if (mobileSheet) mobileSheet.classList.add('open');
+    if (mobileBackdrop) mobileBackdrop.classList.add('open');
+  }
+
+  function closeMobileLayerSheet() {
+    if (mobileSheet) mobileSheet.classList.remove('open');
+    if (mobileBackdrop) mobileBackdrop.classList.remove('open');
+  }
+
+  function syncMobileCards() {
+    if (!mobileGrid) return;
+    const cards = mobileGrid.querySelectorAll('.mobile-layer-card-btn');
+    cards.forEach((btn) => {
+      const lid = btn.dataset.layer;
+      const chk = overlay.querySelector(`input[data-layer="${lid}"]`);
+      const isActive = chk ? chk.checked : false;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+  }
+
+  function renderMobileLayerGrid() {
+    if (!mobileGrid) return;
+    mobileGrid.innerHTML = MOBILE_LAYER_ITEMS.map((item) => {
+      const chk = overlay.querySelector(`input[data-layer="${item.id}"]`);
+      const isActive = chk ? chk.checked : false;
+      return `
+        <button class="mobile-layer-card-btn ${isActive ? 'active' : ''}" data-layer="${item.id}" type="button" aria-pressed="${isActive ? 'true' : 'false'}" aria-label="${item.name}">
+          <div class="mobile-layer-card-thumb">
+            ${item.iconSvg}
+          </div>
+          <span class="mobile-layer-card-name">${item.name}</span>
+        </button>
+      `;
+    }).join('');
+
+    mobileGrid.querySelectorAll('.mobile-layer-card-btn').forEach((btn) => {
+      let lastTrigger = 0;
+      const handleToggle = (e) => {
+        const now = Date.now();
+        if (now - lastTrigger < 250) return;
+        lastTrigger = now;
+        e.stopPropagation();
+        const lid = btn.dataset.layer;
+        const chk = overlay.querySelector(`input[data-layer="${lid}"]`);
+        if (chk) {
+          chk.checked = !chk.checked;
+          chk.dispatchEvent(new Event('change', { bubbles: true }));
+        } else if (onLayerToggle) {
+          const nowActive = !btn.classList.contains('active');
+          btn.classList.toggle('active', nowActive);
+          onLayerToggle(lid, nowActive);
+        }
+        syncMobileCards();
+      };
+
+      btn.addEventListener('click', handleToggle);
+      btn.addEventListener('touchend', handleToggle);
+    });
+  }
+
+  renderMobileLayerGrid();
+
+  if (mobileCloseBtn) {
+    mobileCloseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMobileLayerSheet();
+    });
+  }
+  if (mobileBackdrop) {
+    mobileBackdrop.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeMobileLayerSheet();
+    });
+    mobileBackdrop.addEventListener('touchstart', (e) => {
+      e.stopPropagation();
+      closeMobileLayerSheet();
+    }, { passive: true });
+  }
+
+  if (mobileSheet) {
+    mobileSheet.addEventListener('click', (e) => e.stopPropagation());
+    mobileSheet.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+    mobileSheet.addEventListener('touchmove', (e) => e.stopPropagation(), { passive: true });
+    mobileSheet.addEventListener('touchend', (e) => e.stopPropagation(), { passive: true });
+    mobileSheet.addEventListener('pointerdown', (e) => e.stopPropagation());
+    mobileSheet.addEventListener('pointermove', (e) => e.stopPropagation());
+  }
 
   // Mobile Webview requirement: Start collapsed as an icon on mobile screens
   if (window.innerWidth <= 768) {
@@ -881,6 +1164,14 @@ export function createNavbar(options) {
 
   function togglePanelCollapse(e) {
     if (e) e.stopPropagation();
+    if (window.innerWidth <= 768) {
+      if (mobileSheet && mobileSheet.classList.contains('open')) {
+        closeMobileLayerSheet();
+      } else {
+        openMobileLayerSheet();
+      }
+      return;
+    }
     const isCollapsed = layerPanel.classList.toggle('collapsed');
     if (isCollapsed) {
       toggleBtnText.textContent = 'แสดง';
@@ -891,24 +1182,71 @@ export function createNavbar(options) {
     }
   }
 
-  toggleBtn.addEventListener('click', togglePanelCollapse);
+  toggleBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    togglePanelCollapse(e);
+  });
   layerHeader.addEventListener('click', (e) => {
-    // If collapsed (or in mobile icon mode), clicking anywhere on the icon/header expands it
-    if (layerPanel.classList.contains('collapsed')) {
+    if (e.target.closest('#btn-toggle-layer-panel')) return;
+    // If collapsed (or in mobile icon mode), clicking anywhere on the icon/header triggers it
+    if (layerPanel.classList.contains('collapsed') || window.innerWidth <= 768) {
+      e.stopPropagation();
+      e.preventDefault();
       togglePanelCollapse(e);
     }
   });
 
   // Close layer panel on mobile when tapping outside
   document.addEventListener('click', (e) => {
-    if (window.innerWidth <= 768 && !layerPanel.classList.contains('collapsed')) {
-      if (!layerPanel.contains(e.target)) {
-        layerPanel.classList.add('collapsed');
-        toggleBtnText.textContent = 'แสดง';
-        toggleBtnArrow.textContent = '▴';
+    if (window.innerWidth <= 768) {
+      if (mobileSheet && mobileSheet.classList.contains('open')) {
+        if (!mobileSheet.contains(e.target) && !layerPanel.contains(e.target) && !e.target.closest('#gmaps-mobile-layer-sheet') && !e.target.closest('#gmaps-layer-panel')) {
+          closeMobileLayerSheet();
+        }
+      }
+      if (!layerPanel.classList.contains('collapsed')) {
+        if (!layerPanel.contains(e.target) && !e.target.closest('#gmaps-btn-north')) {
+          layerPanel.classList.add('collapsed');
+          toggleBtnText.textContent = 'แสดง';
+          toggleBtnArrow.textContent = '▴';
+        }
       }
     }
   });
+
+  // North Button Controller (Reset map rotation to North)
+  const northBtn = overlay.querySelector('#gmaps-btn-north');
+  const compassIcon = overlay.querySelector('.gmaps-north-compass-icon');
+
+  function handleResetNorth(e) {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    if (options.onResetNorth) {
+      options.onResetNorth();
+    } else {
+      window.dispatchEvent(new CustomEvent('thaiflood:reset-north'));
+    }
+  }
+
+  if (northBtn) {
+    northBtn.addEventListener('click', handleResetNorth);
+    northBtn.addEventListener('touchend', handleResetNorth);
+  }
+
+  window.addEventListener('thaiflood:map-rotate', (e) => {
+    if (compassIcon && e.detail && typeof e.detail.bearing === 'number') {
+      compassIcon.style.transform = `rotate(${-e.detail.bearing}deg)`;
+    }
+  });
+
+  overlay.updateNorthBearing = (bearing) => {
+    if (compassIcon && typeof bearing === 'number') {
+      compassIcon.style.transform = `rotate(${-bearing}deg)`;
+    }
+  };
 
   // Layer switches change event
   const switches = overlay.querySelectorAll('.gmaps-switch input[type="checkbox"]');
@@ -917,6 +1255,7 @@ export function createNavbar(options) {
       const layerId = e.target.dataset.layer;
       const isChecked = e.target.checked;
       if (onLayerToggle) onLayerToggle(layerId, isChecked);
+      syncMobileCards();
 
       // Auto toggle legend visibility for satellite, radar, geology, GFS, and ECMWF layers
       if (layerId === 'sat-water') {
@@ -933,6 +1272,9 @@ export function createNavbar(options) {
         if (leg) leg.style.display = isChecked ? 'block' : 'none';
       } else if (layerId === 'ecmwf') {
         const leg = overlay.querySelector('#legend-ecmwf');
+        if (leg) leg.style.display = isChecked ? 'block' : 'none';
+      } else if (layerId === 'doh-roads') {
+        const leg = overlay.querySelector('#legend-doh-roads');
         if (leg) leg.style.display = isChecked ? 'block' : 'none';
       } else if (layerId === 'bma-roads') {
         const leg = overlay.querySelector('#legend-bma-roads');
@@ -951,6 +1293,12 @@ export function createNavbar(options) {
         if (leg) leg.style.display = isChecked ? 'block' : 'none';
       }
     });
+  });
+
+  window.addEventListener('resize', () => {
+    if (window.innerWidth > 768) {
+      closeMobileLayerSheet();
+    }
   });
 
   // Left Drawer (Hamburger Menu, Alerts Stack, Sources, Developer)

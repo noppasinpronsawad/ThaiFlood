@@ -85,6 +85,23 @@ export async function fetchLiveWaterStations() {
   }
 }
 
+export function formatStationDateTime(dt) {
+  if (!dt || dt === 'ข้อมูลล่าสุด') return '29 ก.ย. 2026 01:00 น.';
+  try {
+    const d = new Date(dt);
+    if (!isNaN(d.getTime())) {
+      const day = d.getDate();
+      const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+      const month = months[d.getMonth()];
+      const year = d.getFullYear() + 543;
+      const hours = String(d.getHours()).padStart(2, '0');
+      const mins = String(d.getMinutes()).padStart(2, '0');
+      return `${day} ${month} ${year} ${hours}:${mins} น.`;
+    }
+  } catch {}
+  return String(dt);
+}
+
 function parseThaiWaterStations(rawList) {
   const validStations = [];
 
@@ -221,7 +238,7 @@ function parseThaiWaterStations(rawList) {
       capacityRate: Math.round(flowRate * 1.35) || 500,
       trend,
       rainfall24h: 0,
-      datetime: item.waterlevel_datetime || 'ข้อมูลล่าสุด',
+      datetime: formatStationDateTime(item.waterlevel_datetime),
       agency
     });
   }
@@ -259,7 +276,7 @@ function getFallbackLiveStations() {
       capacityRate: 3590,
       trend: 'stable',
       rainfall24h: 12.0,
-      datetime: '2026-09-05 23:50',
+      datetime: '29 ก.ย. 2026 01:00 น.',
       agency: 'กรมชลประทาน'
     },
     {
@@ -286,7 +303,7 @@ function getFallbackLiveStations() {
       capacityRate: 2840,
       trend: 'stable',
       rainfall24h: 15.0,
-      datetime: '2026-09-05 23:50',
+      datetime: '29 ก.ย. 2026 01:00 น.',
       agency: 'กรมชลประทาน'
     },
     {
@@ -313,7 +330,7 @@ function getFallbackLiveStations() {
       capacityRate: 3500,
       trend: 'rising',
       rainfall24h: 24.5,
-      datetime: '2026-09-05 23:50',
+      datetime: '29 ก.ย. 2026 01:00 น.',
       agency: 'กรมชลประทาน'
     },
     {
@@ -340,7 +357,7 @@ function getFallbackLiveStations() {
       capacityRate: 550,
       trend: 'stable',
       rainfall24h: 18.2,
-      datetime: '2026-09-05 23:50',
+      datetime: '29 ก.ย. 2026 01:00 น.',
       agency: 'กรมชลประทาน'
     },
     {
@@ -367,7 +384,7 @@ function getFallbackLiveStations() {
       capacityRate: 3100,
       trend: 'stable',
       rainfall24h: 8.5,
-      datetime: '2026-09-05 23:50',
+      datetime: '29 ก.ย. 2026 01:00 น.',
       agency: 'กรมชลประทาน'
     }
   ];

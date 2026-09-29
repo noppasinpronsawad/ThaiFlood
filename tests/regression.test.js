@@ -905,6 +905,121 @@ async function runAllTests() {
     assert.ok(!mapViewerCode.includes('showTraffyPopup(p, coords)'), 'MapViewer must NOT display popup message for Traffy marker click');
   });
 
+  // 37. DOH National Highway Flood, Medium Reservoir Zoom-Gating & Adaptive Sheet, Dynamic Basemap Label, and Mobile Layer Grid Sheet
+  await test('DOH Highway Flood, Reservoir Zoom-Gating, Dynamic Basemap Label, and Mobile Details Sheet', async () => {
+    const mapViewerCode = fs.readFileSync(path.join(rootDir, 'src/components/MapViewer.js'), 'utf-8');
+    const navbarCode = fs.readFileSync(path.join(rootDir, 'src/components/Navbar.js'), 'utf-8');
+    const stationListCode = fs.readFileSync(path.join(rootDir, 'src/components/WaterStationList.js'), 'utf-8');
+    const cssCode = fs.readFileSync(path.join(rootDir, 'src/index.css'), 'utf-8');
+    const { fetchLiveDams } = await import(path.join(rootDir, 'src/services/damService.js'));
+    const dohService = await import(path.join(rootDir, 'src/services/dohHighwayFloodService.js'));
+
+    // 1. Basemap Label replaces "เลเยอร์" with active map name
+    assert.ok(mapViewerCode.includes('updateBasemapLabel'), 'MapViewer must implement updateBasemapLabel to update basemap name');
+    assert.ok(mapViewerCode.includes('updateBasemapLabel(basemapNames[mode] || mode, mode)'), 'switchBasemap must update basemap label with active name');
+
+    // 2. DOH Highway Flood Layer
+    const dohGeo = await dohService.getDohHighwayGeoJSON();
+    assert.ok(dohGeo && dohGeo.type === 'FeatureCollection', 'DOH highway service must return valid FeatureCollection');
+    assert.ok(dohGeo.features.length >= 10, 'Must have at least 10 national highway flood segments');
+    assert.strictEqual(dohGeo.features[0].geometry.type, 'LineString', 'Highway segments must have LineString geometry');
+    assert.ok(dohGeo.features[0].properties.highwayNo, 'Must have highway number');
+    assert.ok(dohGeo.metadata.hotline.includes('1586'), 'Must include hotline 1586');
+    assert.ok(mapViewerCode.includes('source-doh-roads'), 'MapViewer must have source-doh-roads');
+    assert.ok(mapViewerCode.includes('layer-doh-roads-line'), 'MapViewer must have layer-doh-roads-line');
+    assert.ok(navbarCode.includes('id="toggle-doh-roads"'), 'Navbar must include toggle-doh-roads');
+    assert.ok(stationListCode.includes('renderDohRoadSheet'), 'WaterStationList must implement renderDohRoadSheet');
+    assert.ok(stationListCode.includes('selectDohRoad:'), 'WaterStationList must export selectDohRoad');
+
+    // 3. Medium Reservoir & Major Dam (Zoom-Gating & Adaptive Place Sheet)
+    const dams = await fetchLiveDams();
+    const mediumReservoirs = dams.filter(d => d.isMediumReservoir);
+    const majorDams = dams.filter(d => d.isMajorDam);
+    assert.ok(mediumReservoirs.length >= 8, 'Must have at least 8 medium reservoirs');
+    assert.ok(majorDams.length >= 25, 'Must preserve major dams');
+    assert.ok(mapViewerCode.includes('updateDamZoomGating'), 'MapViewer must implement updateDamZoomGating');
+    assert.ok(mapViewerCode.includes('zoom >= 8.5'), 'Medium reservoirs must be zoom-gated with threshold 8.5');
+    assert.ok(stationListCode.includes('dam.isMediumReservoir'), 'WaterStationList must branch on dam.isMediumReservoir');
+    assert.ok(stationListCode.includes('สมดุลการไหลเข้า-ออก') && stationListCode.includes('น้ำไหลเข้าวันนี้'), 'Medium reservoir sheet must render storage progress bar and inflow/outflow balance without Rule curve');
+
+    // 4. Mobile Google Maps Style "รายละเอียดแผนที่" 3-Column Sheet
+    assert.ok(navbarCode.includes('id="gmaps-mobile-layer-sheet"'), 'Navbar must include gmaps-mobile-layer-sheet');
+    assert.ok(navbarCode.includes('id="mobile-layer-grid"'), 'Navbar must include mobile-layer-grid');
+    assert.ok(navbarCode.includes('openMobileLayerSheet'), 'Navbar must implement openMobileLayerSheet');
+    assert.ok(navbarCode.includes('closeMobileLayerSheet'), 'Navbar must implement closeMobileLayerSheet');
+    assert.ok(cssCode.includes('.gmaps-mobile-layer-sheet'), 'CSS must style .gmaps-mobile-layer-sheet');
+    assert.ok(cssCode.includes('.mobile-layer-grid'), 'CSS must style .mobile-layer-grid with 3 columns');
+    assert.ok(cssCode.includes('.mobile-layer-card-btn.active'), 'CSS must style active state with blue border/text');
+    assert.ok(mapViewerCode.includes("gmaps-mobile-layer-sheet") && mapViewerCode.includes("autoCollapseLayerPanel"), 'MapViewer must auto-collapse mobile layer sheet on map pan/touch');
+  });
+
+  // 39. Layer Visibility Lexical Scoping & Defensive Gating
+  await test('Layer Visibility Lexical Scoping & Defensive Gating: updateDamZoomGating in outer scope and defensive layer handlers', () => {
+    const mapViewerCode = fs.readFileSync(path.join(rootDir, 'src/components/MapViewer.js'), 'utf-8');
+
+    // Verify updateDamZoomGating is NOT trapped inside initMap()
+    const initMapStart = mapViewerCode.indexOf('function initMap()');
+    const initMapEnd = mapViewerCode.indexOf('function renderGeoJSONLayers()');
+    assert(initMapStart !== -1 && initMapEnd !== -1, 'initMap and renderGeoJSONLayers must exist');
+
+    const initMapBody = mapViewerCode.substring(initMapStart, initMapEnd);
+    assert(
+      !initMapBody.includes('function updateDamZoomGating()'),
+      'updateDamZoomGating must NOT be declared inside initMap(); it must be in outer createMapViewer scope'
+    );
+
+    // Verify updateDamZoomGating is declared before renderDamLayers
+    assert(
+      mapViewerCode.includes('function updateDamZoomGating()'),
+      'updateDamZoomGating must be declared in createMapViewer scope'
+    );
+
+    // Verify defensive initialization in setLayerVisibility
+    assert(
+      mapViewerCode.includes("if (!mapInstance.getLayer('layer-traffic')) {\n        initTrafficLayer();\n      }"),
+      'setLayerVisibility must defensively initialize traffic layer'
+    );
+    assert(
+      mapViewerCode.includes("if (damMarkers.length === 0 && damsData && damsData.length > 0) {\n        renderDamLayers();\n      }"),
+      'setLayerVisibility must defensively initialize dams layer'
+    );
+    assert(
+      mapViewerCode.includes("if (!cachedNWPData) {\n        initNWPForecastLayers();\n      }"),
+      'setLayerVisibility must defensively initialize NWP forecast layers'
+    );
+  });
+
+  // 40. North Button & Dam Rule Curve Data Integrity
+  await test('North Button & Dam Rule Curve Data Integrity: Compass control below layer panel and non-NaN Rule Curve outputs', async () => {
+    const navbarCode = fs.readFileSync(path.join(rootDir, 'src/components/Navbar.js'), 'utf-8');
+    const mapViewerCode = fs.readFileSync(path.join(rootDir, 'src/components/MapViewer.js'), 'utf-8');
+    const cssCode = fs.readFileSync(path.join(rootDir, 'src/index.css'), 'utf-8');
+    const { evaluateDamRuleCurve } = await import('../src/services/damRuleCurveService.js');
+
+    // 1. Verify North Button exists in Navbar below layer panel
+    assert.ok(navbarCode.includes('id="gmaps-btn-north"'), 'Navbar must include gmaps-btn-north');
+    assert.ok(navbarCode.includes('gmaps-north-compass-icon'), 'Navbar must include gmaps-north-compass-icon');
+    assert.ok(navbarCode.includes('id="gmaps-layer-panel-stack"'), 'Navbar must stack layer panel and north container');
+    assert.ok(cssCode.includes('.gmaps-north-btn'), 'CSS must style .gmaps-north-btn');
+    assert.ok(cssCode.includes('width: 32px;') && cssCode.includes('height: 32px;'), 'Desktop north btn must match zoom button 32px size');
+    assert.ok(cssCode.includes('width: 38px;') && cssCode.includes('height: 38px;'), 'Mobile north btn must match mobile zoom button 38px size');
+
+    // 2. Verify MapViewer exports resetNorth
+    assert.ok(mapViewerCode.includes('resetNorth:'), 'MapViewer must export resetNorth');
+    assert.ok(mapViewerCode.includes('mapInstance.rotateTo(0'), 'MapViewer resetNorth must rotateTo 0');
+
+    // 3. Verify Rule Curve evaluates without NaN on Thai date strings
+    const thaiDateDam = { name: 'เขื่อนภูมิพล', percentStorage: 65, date: '29 ก.ย. 2026 06:00 น.' };
+    const rc = evaluateDamRuleCurve(thaiDateDam, thaiDateDam.date);
+    assert.ok(rc, 'Rule Curve evaluation must not be null');
+    assert.strictEqual(typeof rc.urcPercent, 'number', 'urcPercent must be number');
+    assert.ok(!isNaN(rc.urcPercent), 'urcPercent must not be NaN');
+    assert.strictEqual(typeof rc.lrcPercent, 'number', 'lrcPercent must be number');
+    assert.ok(!isNaN(rc.lrcPercent), 'lrcPercent must not be NaN');
+    assert.ok(!isNaN(rc.urcStorage), 'urcStorage must not be NaN');
+    assert.ok(!isNaN(rc.lrcStorage), 'lrcStorage must not be NaN');
+  });
+
   console.log(`\n🎉 Regression Tests Completed: ${passedTests} passed.\n`);
 }
 
