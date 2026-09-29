@@ -5,7 +5,9 @@
  * Hotline: สายด่วนกรมทางหลวง 1586 (โทรฟรีตลอด 24 ชม.)
  */
 
-const DOH_CACHE_KEY = 'thaiflood_doh_live_cache_v2';
+import dohRoadAlignments from '../data/dohRoadAlignments.json' with { type: 'json' };
+
+const DOH_CACHE_KEY = 'thaiflood_doh_live_cache_v3';
 const DOH_CACHE_TTL_MS = 10 * 60 * 1000; // 10 mins
 
 /**
@@ -98,13 +100,38 @@ export async function getDohHighwayGeoJSON() {
         ? `กม. ${d.km_start || ''} - กม. ${d.km_end || ''}`.trim()
         : 'จุดตรวจการณ์ทางหลวง';
 
-      // Generate LineString geometry centered around the reported highway coordinate
-      const delta = 0.0035; // ~400m visual corridor
-      const lineCoords = [
-        [Number((lng - delta).toFixed(6)), Number((lat - delta * 0.25).toFixed(6))],
-        [Number(lng.toFixed(6)), Number(lat.toFixed(6))],
-        [Number((lng + delta).toFixed(6)), Number((lat + delta * 0.25).toFixed(6))]
-      ];
+      // Generate authentic LineString geometry aligned with physical highway centerline
+      const alignment = dohRoadAlignments[String(d.case_id)] || dohRoadAlignments[String(d.gid || idx)];
+      const delta = 0.0035; // ~400m visual corridor along the highway
+      let lineCoords = null;
+
+      if (alignment && alignment.p1 && alignment.p2) {
+        const dx = alignment.p2[0] - alignment.p1[0];
+        const dy = alignment.p2[1] - alignment.p1[1];
+        const len = Math.hypot(dx, dy);
+
+        if (len > 1e-6) {
+          const ux = dx / len;
+          const uy = dy / len;
+          // Position center node directly on physical road centerline
+          const cLng = alignment.p1[0];
+          const cLat = alignment.p1[1];
+          lineCoords = [
+            [Number((cLng - ux * delta).toFixed(6)), Number((cLat - uy * delta).toFixed(6))],
+            [Number(cLng.toFixed(6)), Number(cLat.toFixed(6))],
+            [Number((cLng + ux * delta).toFixed(6)), Number((cLat + uy * delta).toFixed(6))]
+          ];
+        }
+      }
+
+      if (!lineCoords) {
+        // Fallback: horizontal tangent centered around reported highway coordinate
+        lineCoords = [
+          [Number((lng - delta).toFixed(6)), Number(lat.toFixed(6))],
+          [Number(lng.toFixed(6)), Number(lat.toFixed(6))],
+          [Number((lng + delta).toFixed(6)), Number(lat.toFixed(6))]
+        ];
+      }
 
       return {
         type: 'Feature',

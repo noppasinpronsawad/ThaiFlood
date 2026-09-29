@@ -1956,13 +1956,14 @@ html, body {
     right: auto;
     transform: none;
     width: calc(100vw - 52px);
-    max-width: min(440px, calc(100vw - 52px));
+    max-width: min(390px, calc(100vw - 72px)) !important;
     padding: 8px 10px;
     border-radius: 14px;
     gap: 5px;
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.2);
     overflow: visible;
     box-sizing: border-box;
+    z-index: 65 !important;
   }
 
   .gmaps-bottom-legend-card .legend-card-header {
@@ -2114,9 +2115,10 @@ html, body {
   .gmaps-bottom-legend-card,
   .gmaps-ecmwf-float-bar {
     left: 6px;
-    width: calc(100vw - 48px);
-    max-width: calc(100vw - 48px);
+    width: calc(100vw - 64px) !important;
+    max-width: calc(100vw - 64px) !important;
     padding: 6px 8px;
+    z-index: 65 !important;
   }
   .gmaps-bottom-legend-card .float-chip,
   .gmaps-ecmwf-float-bar .float-chip {
@@ -2179,7 +2181,7 @@ html, body {
 .gmaps-bottom-legend-card,
 .gmaps-ecmwf-float-bar {
   position: absolute;
-  z-index: 25;
+  z-index: 65 !important;
   box-sizing: border-box;
   background: rgba(255, 255, 255, 0.96);
   backdrop-filter: blur(12px);
@@ -2204,6 +2206,7 @@ html, body {
     transform: translateX(-50%);
     width: auto;
     max-width: min(560px, calc(100vw - 240px));
+    z-index: 65 !important;
   }
 }
 
@@ -2448,11 +2451,12 @@ html, body {
     right: auto !important;
     transform: none !important;
     width: calc(100vw - 52px) !important;
-    max-width: min(440px, calc(100vw - 52px)) !important;
+    max-width: min(390px, calc(100vw - 72px)) !important;
     padding: 8px 10px !important;
     border-radius: 14px !important;
     box-sizing: border-box !important;
     overflow: visible !important;
+    z-index: 65 !important;
   }
 
   .gmaps-bottom-legend-card .legend-card-header {
@@ -2559,9 +2563,10 @@ html, body {
   .gmaps-bottom-legend-card,
   .gmaps-ecmwf-float-bar {
     left: 6px !important;
-    width: calc(100vw - 48px) !important;
-    max-width: calc(100vw - 48px) !important;
+    width: calc(100vw - 64px) !important;
+    max-width: calc(100vw - 64px) !important;
     padding: 6px 8px !important;
+    z-index: 65 !important;
   }
 
   .gmaps-bottom-legend-card .float-chip,
