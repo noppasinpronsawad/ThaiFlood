@@ -1062,10 +1062,14 @@ export function createMapViewer(options) {
       }
     }
 
+    let lastGatingZoom = -1;
     function handleZoomAndMove() {
       if (!mapInstance) return;
-      updateDamZoomGating();
       const zoom = mapInstance.getZoom();
+      if (Math.abs(zoom - lastGatingZoom) >= 0.25) {
+        lastGatingZoom = zoom;
+        updateDamZoomGating();
+      }
       // Show weather pill when zoomed in closer to province/district level (zoom >= 8.0 to 12.5)
       const isProvinceView = zoom >= 8.0 && zoom <= 12.5;
 
@@ -1074,17 +1078,29 @@ export function createMapViewer(options) {
         clearTimeout(weatherUpdateTimer);
         weatherUpdateTimer = setTimeout(() => {
           updateProvinceWeather();
-        }, 200);
+        }, 250);
       } else {
         weatherPill.classList.remove('visible');
       }
     }
 
-    weatherPill.addEventListener('click', () => {
-      if (options.onWeatherPillClick && currentWeatherProvince) {
-        options.onWeatherPillClick(currentWeatherProvince);
+    const handleWeatherPillTrigger = (e) => {
+      if (e) {
+        e.stopPropagation();
+        if (e.cancelable) e.preventDefault();
       }
-    });
+      if (options.onWeatherPillClick) {
+        const center = mapInstance ? mapInstance.getCenter() : null;
+        const nearest = center ? getNearestProvince(center.lat, center.lng) : null;
+        const prov = currentWeatherProvince || (nearest ? nearest.name : 'กรุงเทพมหานคร');
+        options.onWeatherPillClick(prov);
+      }
+    };
+
+    weatherPill.addEventListener('click', handleWeatherPillTrigger);
+    weatherPill.addEventListener('touchend', handleWeatherPillTrigger);
+    weatherPill.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+    weatherPill.addEventListener('pointerdown', (e) => e.stopPropagation());
 
     mapInstance.on('load', () => {
       renderGeoJSONLayers();
@@ -1152,6 +1168,7 @@ export function createMapViewer(options) {
       autoCollapseLayerPanel(e);
       closeMobileSheetOnMapPan(e);
       collapseLegendDesc();
+      window.dispatchEvent(new CustomEvent('thaiflood:close-place-sheet'));
       if (windFieldLayer && windFieldLayer.isVisible()) {
         const w = windFieldLayer.getWindAtPoint(e.lngLat.lat, e.lngLat.lng);
         showToast(`💨 ลมผิวพื้น 10 ม.: ${w.speedKmh} กม./ชม. (${w.speedMps} m/s) · ทิศ${w.directionText} (${w.directionDegrees}°) · Beaufort ${w.beaufort}`, '💨');
@@ -1165,6 +1182,7 @@ export function createMapViewer(options) {
     }
 
     mapInstance.on('zoom', handleZoomAndMove);
+    mapInstance.on('zoomend', handleZoomAndMove);
     mapInstance.on('moveend', () => {
       const zoom = mapInstance.getZoom();
       if (zoom >= 8.0 && zoom <= 12.5) {

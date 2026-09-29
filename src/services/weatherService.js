@@ -103,30 +103,63 @@ function getWeatherDescription(code) {
 }
 
 function formatWeatherData(data, loc) {
-  const daily = data.daily;
+  const daily = data?.daily || {};
+  const times = daily.time || [];
   const days = [];
 
-  for (let i = 0; i < daily.time.length; i++) {
-    const code = daily.weathercode[i];
+  for (let i = 0; i < times.length; i++) {
+    const code = (daily.weathercode && daily.weathercode[i] !== undefined) ? daily.weathercode[i] : 1;
     const weatherInfo = getWeatherDescription(code);
-    const dateObj = new Date(daily.time[i]);
-    const thaiDay = dateObj.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' });
+    const dateStr = times[i];
+    let thaiDay = '';
+    try {
+      const parts = String(dateStr).split('-');
+      if (parts.length === 3) {
+        const dateObj = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+        thaiDay = dateObj.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' });
+      } else {
+        const dateObj = new Date(dateStr);
+        thaiDay = dateObj.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' });
+      }
+    } catch {
+      thaiDay = dateStr || 'วันนี้';
+    }
+
+    const tMax = (daily.temperature_2m_max && typeof daily.temperature_2m_max[i] === 'number')
+      ? Math.round(daily.temperature_2m_max[i])
+      : 32;
+
+    const tMin = (daily.temperature_2m_min && typeof daily.temperature_2m_min[i] === 'number')
+      ? Math.round(daily.temperature_2m_min[i])
+      : 25;
+
+    const rainVal = (daily.precipitation_sum && typeof daily.precipitation_sum[i] === 'number')
+      ? Number(daily.precipitation_sum[i].toFixed(1))
+      : 0;
+
+    const rainProb = (daily.precipitation_probability_max && typeof daily.precipitation_probability_max[i] === 'number')
+      ? daily.precipitation_probability_max[i]
+      : 50;
+
+    const wSpeed = (daily.windspeed_10m_max && typeof daily.windspeed_10m_max[i] === 'number')
+      ? Math.round(daily.windspeed_10m_max[i])
+      : 12;
 
     days.push({
-      date: daily.time[i],
+      date: dateStr,
       displayDate: thaiDay,
       weatherDesc: weatherInfo.text,
       icon: weatherInfo.icon,
       severity: weatherInfo.severity,
-      tempMax: Math.round(daily.temperature_2m_max[i]),
-      tempMin: Math.round(daily.temperature_2m_min[i]),
-      rainMm: Number(daily.precipitation_sum[i].toFixed(1)),
-      rainProbPct: daily.precipitation_probability_max ? daily.precipitation_probability_max[i] : 70,
-      windSpeedKmH: Math.round(daily.windspeed_10m_max[i])
+      tempMax: tMax,
+      tempMin: tMin,
+      rainMm: rainVal,
+      rainProbPct: rainProb,
+      windSpeedKmH: wSpeed
     });
   }
 
-  const totalRainMm = days.reduce((sum, d) => sum + d.rainMm, 0);
+  const totalRainMm = days.reduce((sum, d) => sum + (d.rainMm || 0), 0);
 
   return {
     locationName: loc.name,

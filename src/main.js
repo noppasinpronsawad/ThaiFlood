@@ -110,6 +110,12 @@ async function initApp() {
     });
     appContainer.appendChild(placeSheetInstance.element);
 
+    window.addEventListener('thaiflood:close-place-sheet', () => {
+      if (placeSheetInstance && placeSheetInstance.close) {
+        placeSheetInstance.close();
+      }
+    });
+
     // 3. Google Maps Top-Left Search Bar & Filter Chips
     const topWidget = createNavbar({
       stations: stationsData,

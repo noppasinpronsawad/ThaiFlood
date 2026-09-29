@@ -1158,22 +1158,30 @@ export function createWaterStationList(stations, onStationSelect) {
   function attachEvents() {
     const closeBtn = sheet.querySelector('#btn-gmaps-close');
     if (closeBtn) {
-      closeBtn.addEventListener('click', () => {
+      const handleClose = (e) => {
+        if (e) {
+          e.stopPropagation();
+          if (e.cancelable) e.preventDefault();
+        }
         sheet.classList.remove('open');
         isVisible = false;
-      });
+      };
+      closeBtn.addEventListener('click', handleClose);
+      closeBtn.addEventListener('touchend', handleClose);
     }
 
     const focusBtn = sheet.querySelector('#btn-focus-station');
     if (focusBtn) {
-      focusBtn.addEventListener('click', () => {
+      focusBtn.addEventListener('click', (e) => {
+        if (e) e.stopPropagation();
         if (onStationSelect && currentItem) onStationSelect(currentItem);
       });
     }
 
     const weatherBtn = sheet.querySelector('#btn-view-weather');
     if (weatherBtn) {
-      weatherBtn.addEventListener('click', () => {
+      weatherBtn.addEventListener('click', (e) => {
+        if (e) e.stopPropagation();
         const weatherSection = sheet.querySelector('#gmaps-weather-section');
         if (weatherSection) {
           const targetY = weatherSection.offsetTop;
@@ -1282,10 +1290,22 @@ export function createWaterStationList(stations, onStationSelect) {
     }).catch(() => {});
   }
 
+  // Mobile touch isolation: Prevents WebKit gesture conflict deadlock with MapLibre canvas
+  sheet.addEventListener('click', (e) => e.stopPropagation());
+  sheet.addEventListener('touchstart', (e) => e.stopPropagation(), { passive: true });
+  sheet.addEventListener('touchmove', (e) => e.stopPropagation(), { passive: true });
+  sheet.addEventListener('touchend', (e) => e.stopPropagation(), { passive: true });
+  sheet.addEventListener('pointerdown', (e) => e.stopPropagation());
+  sheet.addEventListener('pointermove', (e) => e.stopPropagation());
+
   render();
 
   return {
     element: sheet,
+    close: () => {
+      sheet.classList.remove('open');
+      isVisible = false;
+    },
     selectStation: (st) => {
       currentItem = st;
       render();
