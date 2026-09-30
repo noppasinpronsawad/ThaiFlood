@@ -2747,7 +2747,7 @@ export function createMapViewer(options) {
       el.title = `[Traffy Fondue] ${p.address} - ${p.state}: ${p.description}`;
       el.innerHTML = `
         <div class="traffy-pin-inner">
-          <img src="${traffyLogoImg}" class="traffy-fondue-pin-logo" alt="Traffy Fondue" width="28" height="28" />
+          <img src="${traffyLogoImg}" class="traffy-fondue-pin-logo" alt="Traffy Fondue" width="34" height="34" />
           <span class="traffy-status-badge ${p.stateClass}"></span>
         </div>
       `;

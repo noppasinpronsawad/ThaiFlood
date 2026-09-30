@@ -1022,6 +1022,24 @@ async function runAllTests() {
     assert.ok(!isNaN(rc.lrcStorage), 'lrcStorage must not be NaN');
   });
 
+  // 41. Mobile Basemap Flyout, Weather Pill Stacking & Traffy Fondue Pin Enlargement
+  await test('Mobile Basemap Flyout, Weather Pill Stacking & Traffy Fondue Pin Enlargement', () => {
+    const mapViewerCode = fs.readFileSync(path.join(rootDir, 'src/components/MapViewer.js'), 'utf-8');
+    const cssCode = fs.readFileSync(path.join(rootDir, 'src/index.css'), 'utf-8');
+
+    // 1. Mobile basemap flyout to the right and hide header
+    assert.ok(cssCode.includes('left: calc(100% + 8px);'), 'Mobile basemap flyout must position to the right');
+    assert.ok(cssCode.includes('.gmaps-basemap-header') && cssCode.includes('display: none !important;'), 'Mobile basemap header must be hidden');
+
+    // 2. Weather pill stacking above map data
+    assert.ok(cssCode.includes('.gmaps-apple-weather-pill') && cssCode.includes('z-index: 60 !important;'), 'Weather pill must have elevated z-index: 60 !important');
+
+    // 3. Traffy Fondue Pin Enlargement by 20% (28px * 1.2 = 33.6px -> 34px)
+    assert.ok(cssCode.includes('.traffy-pin-inner') && cssCode.includes('width: 34px;'), 'Traffy pin inner width must be 34px');
+    assert.ok(cssCode.includes('.traffy-fondue-pin-logo') && cssCode.includes('width: 34px;'), 'Traffy logo CSS width must be 34px');
+    assert.ok(mapViewerCode.includes('class="traffy-fondue-pin-logo"') && mapViewerCode.includes('width="34" height="34"'), 'MapViewer must render Traffy pin img at 34x34');
+  });
+
   console.log(`\n🎉 Regression Tests Completed: ${passedTests} passed.\n`);
 }
 
