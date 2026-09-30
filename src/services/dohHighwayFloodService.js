@@ -116,7 +116,7 @@ export async function getDohHighwayGeoJSON() {
       // If lane_closure is true, passability is blocked or restricted
       const passable = !d.lane_closure;
       const roadCodeStr = d.road_code ? String(d.road_code).trim() : '';
-      const highwayNo = roadCodeStr ? `ทล. ${parseInt(roadCodeStr, 10) || roadCodeStr}` : 'ทางหลวงแผ่นดิน';
+      const highwayNo = roadCodeStr ? `ทล.${parseInt(roadCodeStr, 10) || roadCodeStr}` : 'ทล.';
       const routeName = d.section_name || d.case_name || 'ช่วงสายทางหลวง';
       const kmRange = (d.km_start || d.km_end)
         ? `กม. ${d.km_start || ''} - กม. ${d.km_end || ''}`.trim()

@@ -2578,6 +2578,16 @@ export function createMapViewer(options) {
       const cardClass = isPassable ? 'passable' : 'impassable';
       const depthText = p.waterDepthCm ? `${p.waterDepthCm} ซม.` : '';
 
+      // Format highway route label with 'ทล.' abbreviation (e.g. ทล.1, ทล.118)
+      let routeDisplay = p.highwayNo ? String(p.highwayNo).trim() : '';
+      if (!routeDisplay || routeDisplay === 'ทางหลวงแผ่นดิน') {
+        routeDisplay = 'ทล.';
+      } else if (!routeDisplay.startsWith('ทล.')) {
+        routeDisplay = `ทล.${routeDisplay.replace(/^ทล\.?\s*/, '')}`;
+      } else {
+        routeDisplay = routeDisplay.replace(/^ทล\.\s*/, 'ทล.');
+      }
+
       el.innerHTML = `
         <div class="doh-minimal-pin ${cardClass}">
           <div class="doh-minimal-icon-wrap ${cardClass}">
@@ -2590,7 +2600,7 @@ export function createMapViewer(options) {
             </svg>
           </div>
           <div class="doh-minimal-tag ${cardClass}">
-            <span class="doh-route-label">${p.highwayNo}</span>
+            <span class="doh-route-label">${routeDisplay}</span>
             ${depthText ? `<span class="doh-depth-label">${depthText}</span>` : ''}
           </div>
         </div>
