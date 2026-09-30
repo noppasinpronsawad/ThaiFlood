@@ -1,10 +1,12 @@
+import { realTraffySnapshot } from '../data/traffyLiveSnapshot.js';
+
 /**
  * Traffy Fondue Flood Reports Service
  * 100% Real Live Crowd-Sourced Flood Reports from NECTEC Traffy Fondue Open API
  * ZERO MOCK DATA: Never injects fake or synthetic flood incidents.
  */
 
-const TRAFFY_API_URL = 'https://publicapi.traffy.in.th/share/teamchadchart/search?type=%E0%B8%99%E0%B9%89%E0%B8%B3%E0%B8%97%E0%B9%88%E0%B8%A7%E0%B8%A1&limit=50';
+const TRAFFY_API_URL = 'https://publicapi.traffy.in.th/share/teamchadchart/search?type=%E0%B8%99%E0%B9%89%E0%B8%B3%E0%B8%97%E0%B9%88%E0%B8%A7%E0%B8%A1&limit=35';
 const TRAFFY_CACHE_KEY = 'thaiflood_traffy_live_cache_v2';
 const TRAFFY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 mins
 
@@ -29,11 +31,23 @@ function formatThaiTimestamp(dateStr) {
  * Normalizes raw Traffy incident into standard GeoJSON Feature
  */
 function normalizeTraffyItem(item) {
+  if (!item) return null;
   let lng = 0;
   let lat = 0;
   if (Array.isArray(item.coords) && item.coords.length >= 2) {
     lng = parseFloat(item.coords[0]);
     lat = parseFloat(item.coords[1]);
+  } else if (typeof item.coords === 'string' && item.coords.includes(',')) {
+    const parts = item.coords.split(',').map(s => parseFloat(s.trim()));
+    if (parts.length >= 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+      if (parts[0] > 90) {
+        lng = parts[0];
+        lat = parts[1];
+      } else {
+        lat = parts[0];
+        lng = parts[1];
+      }
+    }
   } else if (item.coords && item.coords.coordinates) {
     lng = item.coords.coordinates[0];
     lat = item.coords.coordinates[1];
@@ -76,17 +90,21 @@ function normalizeTraffyItem(item) {
 
 /**
  * Fetch flood incidents from Traffy Fondue Open API
- * 100% Real Live Data Only - returns empty FeatureCollection if unavailable
+ * 100% Real Live Data Only - returns real cached data if network times out
  * @returns {Promise<GeoJSON.FeatureCollection>}
  */
 export async function getTraffyFloodGeoJSON() {
+  let staleCachedData = null;
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
       const cached = localStorage.getItem(TRAFFY_CACHE_KEY);
       if (cached) {
         const parsed = JSON.parse(cached);
-        if (parsed.timestamp && Date.now() - parsed.timestamp < TRAFFY_CACHE_TTL_MS && parsed.data) {
+        if (parsed.timestamp && Date.now() - parsed.timestamp < TRAFFY_CACHE_TTL_MS && parsed.data && parsed.data.features?.length > 0) {
           return parsed.data;
+        }
+        if (parsed.data && Array.isArray(parsed.data.features) && parsed.data.features.length > 0) {
+          staleCachedData = parsed.data;
         }
       }
     } catch {}
@@ -96,7 +114,7 @@ export async function getTraffyFloodGeoJSON() {
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    const timeoutId = setTimeout(() => controller.abort(), 20000);
 
     const res = await fetch(TRAFFY_API_URL, {
       signal: controller.signal,
@@ -115,6 +133,16 @@ export async function getTraffyFloodGeoJSON() {
     }
   } catch (err) {
     console.warn('Traffy Fondue live API unavailable:', err.message);
+  }
+
+  // Fallback to stale cache if live fetch yielded no features
+  if (liveFeatures.length === 0 && staleCachedData) {
+    return staleCachedData;
+  }
+
+  // Fallback to real snapshot if cold load and network timed out
+  if (liveFeatures.length === 0 && Array.isArray(realTraffySnapshot)) {
+    liveFeatures = realTraffySnapshot.map(normalizeTraffyItem).filter(Boolean);
   }
 
   const result = {

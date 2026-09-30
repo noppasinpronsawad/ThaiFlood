@@ -2574,30 +2574,25 @@ export function createMapViewer(options) {
       el.title = `[กรมทางหลวง] ${p.highwayNo} (${p.routeName}) กม. ${p.kmRange} - ${p.statusLabel}`;
 
       const isPassable = !!p.passable;
-      const statusPillClass = isPassable ? 'status-passable' : 'status-impassable';
-      const statusText = isPassable
-        ? `⚠️ ท่วม ${p.waterDepthCm} ซม.`
-        : `⛔ ผ่านไม่ได้ (${p.waterDepthCm} ซม.)`;
       const passColor = isPassable ? '#ea580c' : '#dc2626';
-      const passBorder = isPassable ? '#f59e0b' : '#ef4444';
       const cardClass = isPassable ? 'passable' : 'impassable';
+      const depthText = p.waterDepthCm ? `${p.waterDepthCm} ซม.` : '';
 
       el.innerHTML = `
-        <div class="doh-shield-card ${cardClass}">
-          <div class="doh-shield-header">
-            <svg class="traffy-road-svg doh-road-icon" viewBox="0 0 24 24" width="19" height="19" fill="none">
-              <circle cx="12" cy="12" r="10.5" fill="${passColor}" stroke="${passBorder}" stroke-width="2"/>
+        <div class="doh-minimal-pin ${cardClass}">
+          <div class="doh-minimal-icon-wrap ${cardClass}">
+            <svg class="traffy-road-svg doh-road-icon" viewBox="0 0 24 24" width="22" height="22" fill="none">
+              <circle cx="12" cy="12" r="10.5" fill="${passColor}" stroke="#ffffff" stroke-width="2"/>
               <path d="M7 18.5L9.5 5.5H14.5L17 18.5H7Z" fill="#0f172a" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round"/>
               <line x1="12" y1="6.5" x2="12" y2="9" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
               <line x1="12" y1="11" x2="12" y2="13.5" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
               <line x1="12" y1="15.5" x2="12" y2="18" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
+          </div>
+          <div class="doh-minimal-tag ${cardClass}">
             <span class="doh-route-label">${p.highwayNo}</span>
+            ${depthText ? `<span class="doh-depth-label">${depthText}</span>` : ''}
           </div>
-          <div class="doh-status-pill ${statusPillClass}">
-            ${statusText}
-          </div>
-          <div class="doh-shield-arrow-down"></div>
         </div>
       `;
 

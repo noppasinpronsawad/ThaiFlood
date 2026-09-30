@@ -623,7 +623,7 @@ async function runAllTests() {
     assert.ok(mapViewerCode.includes('gmaps-basemap-container'), 'Must have gmaps-basemap-container');
 
     const cssCode = fs.readFileSync(path.join(rootDir, 'src/index.css'), 'utf-8');
-    assert.ok(cssCode.includes('width: 50px;') && cssCode.includes('height: 50px;'), 'Thumbnails must be 50x50px');
+    assert.ok(cssCode.includes('width: 44px;') && cssCode.includes('height: 44px;'), 'Thumbnails must be 44x44px');
   });
 
   await test('Dam Barrier Symbol Map Layer', () => {
@@ -1038,6 +1038,33 @@ async function runAllTests() {
     assert.ok(cssCode.includes('.traffy-pin-inner') && cssCode.includes('width: 34px;'), 'Traffy pin inner width must be 34px');
     assert.ok(cssCode.includes('.traffy-fondue-pin-logo') && cssCode.includes('width: 34px;'), 'Traffy logo CSS width must be 34px');
     assert.ok(mapViewerCode.includes('class="traffy-fondue-pin-logo"') && mapViewerCode.includes('width="34" height="34"'), 'MapViewer must render Traffy pin img at 34x34');
+  });
+
+  // 42. Minimal DOH Highway Flood Pin, Basemap Stacking & Redesigned Cartographic Thumbnails
+  await test('Minimal DOH Highway Flood Pin, Basemap Stacking & Redesigned Cartographic Thumbnails', () => {
+    const mapViewerCode = fs.readFileSync(path.join(rootDir, 'src/components/MapViewer.js'), 'utf-8');
+    const cssCode = fs.readFileSync(path.join(rootDir, 'src/index.css'), 'utf-8');
+    const traffyServiceCode = fs.readFileSync(path.join(rootDir, 'src/services/traffyFondueService.js'), 'utf-8');
+
+    // 1. Minimal DOH Highway Pin
+    assert.ok(mapViewerCode.includes('doh-minimal-pin'), 'MapViewer must render doh-minimal-pin');
+    assert.ok(mapViewerCode.includes('doh-minimal-tag'), 'MapViewer must render doh-minimal-tag');
+    assert.ok(mapViewerCode.includes('doh-depth-label'), 'MapViewer must render doh-depth-label');
+    assert.ok(cssCode.includes('.doh-minimal-pin'), 'CSS must style .doh-minimal-pin');
+    assert.ok(cssCode.includes('.doh-minimal-tag'), 'CSS must style .doh-minimal-tag');
+
+    // 2. Basemap Stacking above Bottom Legend Card on Click/Mouseover
+    assert.ok(cssCode.includes('.gmaps-basemap-container:hover') && cssCode.includes('z-index: 85 !important;'), 'Basemap container must elevate to z-index 85 on hover/expanded');
+    assert.ok(cssCode.includes('.gmaps-basemap-side-grid') && cssCode.includes('z-index: 90 !important;'), 'Basemap side grid must have z-index 90');
+
+    // 3. Lower space reduction & Redesigned Satellite/Topo Cards
+    assert.ok(cssCode.includes('padding: 6px 10px 4px 10px;'), 'Desktop side grid must have reduced lower space');
+    assert.ok(cssCode.includes('.thumb-satellite') && cssCode.includes('rgba(255, 255, 255, 0.65)'), 'Satellite thumbnail must render atmospheric clouds and true orthophoto');
+    assert.ok(cssCode.includes('.thumb-topo') && cssCode.includes('content: "▲";'), 'Topo thumbnail must render mountain peak summit symbol');
+
+    // 4. Traffy Fondue Resilient Fallback
+    assert.ok(traffyServiceCode.includes('realTraffySnapshot'), 'Traffy service must import real snapshot fallback');
+    assert.ok(traffyServiceCode.includes('20000'), 'Traffy service must have resilient 20s timeout');
   });
 
   console.log(`\n🎉 Regression Tests Completed: ${passedTests} passed.\n`);
