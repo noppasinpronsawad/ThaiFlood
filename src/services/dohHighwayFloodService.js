@@ -124,7 +124,8 @@ export async function getDohHighwayGeoJSON() {
       } else if (d.road_code) {
         const roadCodeStr = String(d.road_code).trim();
         const num = parseInt(roadCodeStr, 10);
-        highwayNo = !isNaN(num) ? String(num) : roadCodeStr;
+        const code = !isNaN(num) ? String(num) : roadCodeStr;
+        highwayNo = code ? (code.startsWith('ถนน') ? code : `ถนน ${code}`) : '';
       }
       const routeName = d.section_name || d.case_name || 'ช่วงสายทางหลวง';
       const kmRange = (d.km_start || d.km_end)
