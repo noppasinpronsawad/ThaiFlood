@@ -864,8 +864,8 @@ html, body {
 }
 
 .gmaps-basemap-trigger #basemap-active-thumb {
-  width: 48px;
-  height: 48px;
+  width: 58px;
+  height: 52px;
   border-radius: 10px;
   border: 2.5px solid #ffffff;
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28);
@@ -887,25 +887,23 @@ html, body {
   z-index: 85 !important;
 }
 
-/* Scrim overlay with icon and "เลเยอร์" text (matching uploaded image exactly) */
+/* Scrim overlay with basemap type text (expanded clean display without icon) */
 .basemap-scrim {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 12px 2px 3px 2px;
+  padding: 10px 4px 4px 4px;
   background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.65) 45%, rgba(0, 0, 0, 0.92) 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
+  text-align: center;
   pointer-events: none;
 }
 
 .basemap-layer-svg {
-  display: inline-block;
-  flex-shrink: 0;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.8));
+  display: none !important;
 }
 
 .basemap-scrim-title {
@@ -913,8 +911,11 @@ html, body {
   font-size: 11.5px;
   font-weight: 700;
   letter-spacing: -0.2px;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
-  line-height: 1;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+  line-height: 1.1;
+  white-space: nowrap;
+  text-align: center;
+  width: 100%;
 }
 
 .basemap-header-label {
@@ -1862,24 +1863,23 @@ html, body {
   }
 
   .gmaps-basemap-trigger #basemap-active-thumb {
-    width: 44px;
-    height: 44px;
+    width: 54px;
+    height: 48px;
     border-radius: 9px;
     border-width: 2px;
   }
 
   .basemap-scrim {
     padding: 8px 2px 2px 2px;
-    gap: 3px;
   }
 
   .basemap-layer-svg {
-    width: 14px;
-    height: 14px;
+    display: none !important;
   }
 
   .basemap-scrim-title {
-    font-size: 10px;
+    font-size: 10.5px;
+    letter-spacing: -0.3px;
   }
 
   .basemap-header-label {
@@ -2000,7 +2000,7 @@ html, body {
   .gmaps-bottom-legend-card,
   .gmaps-ecmwf-float-bar {
     bottom: calc(76px + env(safe-area-inset-bottom, 0px));
-    bottom: calc(88px + env(safe-area-inset-bottom, 8px));
+    bottom: calc(90px + env(safe-area-inset-bottom, 8px));
     left: 8px;
     right: auto;
     transform: none;
@@ -2140,12 +2140,13 @@ html, body {
     z-index: 60 !important;
   }
   .gmaps-basemap-trigger #basemap-active-thumb {
-    width: 42px;
-    height: 42px;
+    width: 50px;
+    height: 46px;
     border-radius: 8px;
   }
   .basemap-scrim-title {
-    font-size: 9.5px;
+    font-size: 10px;
+    letter-spacing: -0.3px;
   }
   .basemap-header-label {
     font-size: 8px;

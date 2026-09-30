@@ -74,10 +74,6 @@ export function createMapViewer(options) {
       <button class="gmaps-basemap-trigger" id="gmaps-basemap-trigger" title="คลิกหรือวางเมาส์เพื่อเลือกประเภทแผนที่" type="button" aria-label="เลือกประเภทแผนที่">
         <div class="basemap-thumb thumb-street" id="basemap-active-thumb">
           <div class="basemap-scrim">
-            <svg class="basemap-layer-svg" width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M12 3.5L21.5 8.8L12 14.1L2.5 8.8L12 3.5Z" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-              <path d="M2.5 12.8L12 18.1L21.5 12.8L21.5 15.8L12 21.1L2.5 15.8L2.5 12.8Z" fill="#ffffff"/>
-            </svg>
             <span class="basemap-scrim-title" id="basemap-scrim-title">แผนที่</span>
           </div>
         </div>
@@ -2578,15 +2574,8 @@ export function createMapViewer(options) {
       const cardClass = isPassable ? 'passable' : 'impassable';
       const depthText = p.waterDepthCm ? `${p.waterDepthCm} ซม.` : '';
 
-      // Format highway route label with 'ทล.' abbreviation (e.g. ทล.1, ทล.118)
-      let routeDisplay = p.highwayNo ? String(p.highwayNo).trim() : '';
-      if (!routeDisplay || routeDisplay === 'ทางหลวงแผ่นดิน') {
-        routeDisplay = 'ทล.';
-      } else if (!routeDisplay.startsWith('ทล.')) {
-        routeDisplay = `ทล.${routeDisplay.replace(/^ทล\.?\s*/, '')}`;
-      } else {
-        routeDisplay = routeDisplay.replace(/^ทล\.\s*/, 'ทล.');
-      }
+      // Display actual route / abbreviation as received from API without hardcoding 'ทล.'
+      const routeDisplay = p.highwayNo ? String(p.highwayNo).trim() : '';
 
       el.innerHTML = `
         <div class="doh-minimal-pin ${cardClass}">
@@ -2600,7 +2589,7 @@ export function createMapViewer(options) {
             </svg>
           </div>
           <div class="doh-minimal-tag ${cardClass}">
-            <span class="doh-route-label">${routeDisplay}</span>
+            ${routeDisplay ? `<span class="doh-route-label">${routeDisplay}</span>` : ''}
             ${depthText ? `<span class="doh-depth-label">${depthText}</span>` : ''}
           </div>
         </div>
