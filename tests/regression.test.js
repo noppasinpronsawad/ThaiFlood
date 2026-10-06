@@ -1067,6 +1067,93 @@ async function runAllTests() {
     assert.ok(traffyServiceCode.includes('20000'), 'Traffy service must have resilient 20s timeout');
   });
 
+  // 43. DOH Highway & Traffy Fondue Marker Clustering, Zoom Hierarchy, Tie-Breaker Majority Color, Expansion Zoom & Spiderfy
+  await test('Marker Clustering, Zoom Hierarchy, Tie-Breaker Majority Color, Expansion Zoom & Spiderfy', async () => {
+    const clusterService = await import(path.join(rootDir, 'src/services/markerClusterService.js'));
+    const mapViewerCode = fs.readFileSync(path.join(rootDir, 'src/components/MapViewer.js'), 'utf-8');
+    const cssCode = fs.readFileSync(path.join(rootDir, 'src/index.css'), 'utf-8');
+    const windLayerModule = await import(path.join(rootDir, 'src/components/WindFieldLayer.js'));
+
+    // 1. Cluster Service Exports & Hierarchy
+    assert.ok(typeof clusterService.clusterPointsByZoom === 'function', 'Must export clusterPointsByZoom');
+    assert.ok(typeof clusterService.calculateSpiderfyOffsets === 'function', 'Must export calculateSpiderfyOffsets');
+    assert.ok(typeof clusterService.computeDohClusterColor === 'function', 'Must export computeDohClusterColor');
+
+    // 2. Strict Tie-Breaker Majority Color Rule: หากเท่ากันให้แสดงหมุดไอคอนสีแดง (#dc2626)
+    const tieItems = [
+      { properties: { passable: true } },
+      { properties: { passable: false } }
+    ];
+    const tieRes = clusterService.computeDohClusterColor(tieItems);
+    assert.strictEqual(tieRes.dominantColor, '#dc2626', 'Equal passable and impassable counts MUST result in Red (#dc2626)');
+    assert.strictEqual(tieRes.dominantClass, 'impassable', 'Equal counts must have impassable class');
+
+    const passMajority = [
+      { properties: { passable: true } },
+      { properties: { passable: true } },
+      { properties: { passable: false } }
+    ];
+    const passRes = clusterService.computeDohClusterColor(passMajority);
+    assert.strictEqual(passRes.dominantColor, '#ea580c', 'Passable majority must result in Orange (#ea580c)');
+
+    const impassMajority = [
+      { properties: { passable: false } },
+      { properties: { passable: false } },
+      { properties: { passable: true } }
+    ];
+    const impassRes = clusterService.computeDohClusterColor(impassMajority);
+    assert.strictEqual(impassRes.dominantColor, '#dc2626', 'Impassable majority must result in Red (#dc2626)');
+
+    // 3. Zoom-based Clustering Thresholds:
+    // - Zoom < 7.0: ระดับภาค
+    // - 7.0 <= Zoom < 9.5: รวมระดับจังหวัด
+    // - Zoom >= 9.5: หมุดแต่ละจุด
+    const mockPoints = [
+      { properties: { province: 'พระนครศรีอยุธยา', passable: false }, geometry: { type: 'Point', coordinates: [100.56, 14.35] } },
+      { properties: { province: 'พระนครศรีอยุธยา', passable: true }, geometry: { type: 'Point', coordinates: [100.57, 14.36] } },
+      { properties: { province: 'เชียงใหม่', passable: false }, geometry: { type: 'Point', coordinates: [98.98, 18.79] } }
+    ];
+
+    const regClusters = clusterService.clusterPointsByZoom(mockPoints, 6.0, 'doh');
+    assert.ok(regClusters.every(c => c.level === 'region'), 'Zoom < 7.0 must cluster at regional level (ระดับภาค)');
+    assert.ok(regClusters.some(c => c.name === 'ภาคกลาง'), 'Must include ภาคกลาง');
+    assert.ok(regClusters.some(c => c.name === 'ภาคเหนือ'), 'Must include ภาคเหนือ');
+
+    const provClusters = clusterService.clusterPointsByZoom(mockPoints, 8.0, 'doh');
+    assert.ok(provClusters.every(c => c.level === 'province'), '7.0 <= Zoom < 9.5 must cluster at provincial level (รวมระดับจังหวัด)');
+    const ayuProv = provClusters.find(c => c.name === 'พระนครศรีอยุธยา');
+    assert.ok(ayuProv, 'Must include พระนครศรีอยุธยา');
+    assert.strictEqual(ayuProv.count, 2, 'Ayutthaya must combine 2 points');
+    // In Ayutthaya: 1 passable, 1 impassable => tie-breaker = Red!
+    assert.strictEqual(ayuProv.dohColor.dominantColor, '#dc2626', 'Ayutthaya equal points must use Red (#dc2626)');
+
+    const indPins = clusterService.clusterPointsByZoom(mockPoints, 10.5, 'doh');
+    assert.strictEqual(indPins.length, 3, 'Zoom >= 9.5 must show individual points (หมุดแต่ละจุด)');
+    assert.ok(indPins.every(p => !p.isCluster), 'All pins at zoom >= 9.5 must not be clusters');
+
+    // 4. Spiderfy Offsets
+    const spiderOffsets = clusterService.calculateSpiderfyOffsets(4, 52);
+    assert.strictEqual(spiderOffsets.length, 4, 'Must return 4 radial offsets for 4 overlapping items');
+    assert.ok(spiderOffsets[0].radius >= 40, 'Spiderfy radius must be at least 40px');
+
+    // 5. MapViewer & CSS Integration
+    assert.ok(mapViewerCode.includes('doh-cluster-pin'), 'MapViewer must render doh-cluster-pin');
+    assert.ok(mapViewerCode.includes('traffy-cluster-pin'), 'MapViewer must render traffy-cluster-pin');
+    assert.ok(mapViewerCode.includes('handleClusterExpansionZoom'), 'MapViewer must implement handleClusterExpansionZoom');
+    assert.ok(mapViewerCode.includes('spiderfyOverlappingPins'), 'MapViewer must implement spiderfyOverlappingPins');
+    assert.ok(cssCode.includes('.doh-cluster-pin'), 'CSS must style .doh-cluster-pin');
+    assert.ok(cssCode.includes('.traffy-cluster-pin'), 'CSS must style .traffy-cluster-pin');
+    assert.ok(cssCode.includes('.spiderfy-spoke-line'), 'CSS must style .spiderfy-spoke-line');
+    assert.ok(cssCode.includes('.spiderfy-center-dot'), 'CSS must style .spiderfy-center-dot');
+
+    // 6. Windy Verification
+    const windVec = windLayerModule.calculatePhysicalWindVector(13.75, 100.5);
+    assert.ok(typeof windVec.speed === 'number' && windVec.speed > 0, 'Wind vector must have positive physical speed');
+    assert.ok(typeof windVec.dirDeg === 'number' && windVec.dirDeg >= 0 && windVec.dirDeg <= 360, 'Wind direction must be in [0, 360]');
+    const bInfo = windLayerModule.getBeaufortInfo(windVec.speed);
+    assert.ok(bInfo.color && bInfo.label, 'Beaufort info must return color and label');
+  });
+
   console.log(`\n🎉 Regression Tests Completed: ${passedTests} passed.\n`);
 }
 

@@ -325,6 +325,7 @@ export function createWindFieldLayer(map) {
   });
 
   return {
+    get canvas() { return canvas; },
     setVisible: (visible) => {
       isLayerVisible = visible;
       if (visible) {

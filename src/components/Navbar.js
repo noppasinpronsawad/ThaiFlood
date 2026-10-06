@@ -17,7 +17,7 @@ export function createNavbar(options) {
     <!-- Top-Left Google Maps Search Box -->
     <div class="gmaps-top-widget" id="gmaps-top-widget">
       <div class="gmaps-search-card" id="gmaps-search-card">
-        <button class="gmaps-hamburger-btn" id="gmaps-hamburger-btn" title="เมนูหลัก (แจ้งเตือน / แหล่งข้อมูล / เกี่ยวกับผู้พัฒนา)" type="button" aria-label="เมนูหลัก">
+        <button class="gmaps-hamburger-btn" id="gmaps-hamburger-btn" title="เมนูหลัก (แจ้งเตือน / แหล่งข้อมูล)" type="button" aria-label="เมนูหลัก">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
             <path d="M4 6H20M4 12H20M4 18H20" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
           </svg>
@@ -487,7 +487,7 @@ export function createNavbar(options) {
         <div class="drawer-header-brand">
           <span class="drawer-logo">🌊</span>
           <div>
-            <div class="drawer-title">ThaiFlood Intelligence</div>
+            <div class="drawer-title">ThaiFlood Monitor</div>
             <div class="drawer-subtitle">ระบบสารสนเทศและเตือนภัยน้ำท่วม</div>
           </div>
         </div>
@@ -509,10 +509,12 @@ export function createNavbar(options) {
           <span class="tab-icon">📚</span>
           <span class="tab-label">แหล่งข้อมูล</span>
         </button>
+        <!-- Developer Tab (Commented out temporarily until user base grows)
         <button class="drawer-tab-btn" data-tab="developer">
           <span class="tab-icon">👨‍💻</span>
           <span class="tab-label">ผู้พัฒนา</span>
         </button>
+        -->
       </div>
 
       <div class="drawer-content">
@@ -601,7 +603,7 @@ export function createNavbar(options) {
           </div>
         </div>
 
-        <!-- Tab 3: Developer -->
+        <!-- Tab 3: Developer (Commented out temporarily until user base grows)
         <div class="drawer-tab-pane" id="tab-pane-developer">
           <div class="developer-profile-card">
             <div class="dev-badge-icon">🎓</div>
@@ -614,7 +616,7 @@ export function createNavbar(options) {
             </p>
 
             <div class="dev-links-list">
-              <!-- LinkedIn Button -->
+              [-- LinkedIn Button --]
               <a href="https://www.linkedin.com/in/noppasinp" target="_blank" rel="noopener noreferrer" class="dev-contact-btn btn-linkedin" title="เปิด LinkedIn Profile">
                 <div class="btn-contact-left">
                   <svg class="contact-svg-icon" viewBox="0 0 24 24" fill="currentColor">
@@ -628,7 +630,7 @@ export function createNavbar(options) {
                 <span class="contact-arrow">↗</span>
               </a>
 
-              <!-- Website Button -->
+              [-- Website Button --]
               <a href="https://noppasinp.vercel.app" target="_blank" rel="noopener noreferrer" class="dev-contact-btn btn-website" title="เปิด Personal Website">
                 <div class="btn-contact-left">
                   <svg class="contact-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -645,7 +647,7 @@ export function createNavbar(options) {
               </a>
             </div>
 
-            <!-- GoatCounter Privacy-friendly Analytics Stats -->
+            [-- GoatCounter Privacy-friendly Analytics Stats --]
             <div class="drawer-stats-section" style="margin-top: 24px; padding: 14px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;">
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
                 <div style="display: flex; align-items: center; gap: 6px; color: #cbd5e1; font-size: 12.5px; font-weight: 600;">
@@ -668,6 +670,7 @@ export function createNavbar(options) {
             </div>
           </div>
         </div>
+        -->
       </div>
     </aside>
 

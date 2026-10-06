@@ -14,6 +14,7 @@ import { getDohHighwayGeoJSON } from '../services/dohHighwayFloodService.js';
 import { createWindFieldLayer } from './WindFieldLayer.js';
 import { evaluateDamRuleCurve } from '../services/damRuleCurveService.js';
 import { getTraffyFloodGeoJSON } from '../services/traffyFondueService.js';
+import { clusterPointsByZoom, calculateSpiderfyOffsets } from '../services/markerClusterService.js';
 import traffyLogoImg from '../assets/images/traffy-fondue-logo.png';
 
 export function createMapViewer(options) {
@@ -1061,6 +1062,30 @@ export function createMapViewer(options) {
     }
 
     let lastGatingZoom = -1;
+    let lastClusteredTier = '';
+
+    function getZoomTier(zoom) {
+      if (zoom < 7.0) return 'region';
+      if (zoom < 9.5) return 'province';
+      return 'individual';
+    }
+
+    function handleMarkerClusteringOnZoom() {
+      if (!mapInstance) return;
+      const zoom = mapInstance.getZoom();
+      const currentTier = getZoomTier(zoom);
+      if (currentTier !== lastClusteredTier) {
+        lastClusteredTier = currentTier;
+        clearActiveSpiderfy();
+        if (activeLegendLayers.has('doh-roads')) {
+          updateDOHHighwayMarkers();
+        }
+        if (isTraffyFloodVisible) {
+          updateTraffyFloodMarkers();
+        }
+      }
+    }
+
     function handleZoomAndMove() {
       if (!mapInstance) return;
       const zoom = mapInstance.getZoom();
@@ -1068,6 +1093,7 @@ export function createMapViewer(options) {
         lastGatingZoom = zoom;
         updateDamZoomGating();
       }
+      handleMarkerClusteringOnZoom();
       // Show weather pill when zoomed in closer to province/district level (zoom >= 8.0 to 12.5)
       const isProvinceView = zoom >= 8.0 && zoom <= 12.5;
 
@@ -1154,15 +1180,20 @@ export function createMapViewer(options) {
       }
     }
 
+    mapInstance.on('movestart', clearActiveSpiderfy);
+    mapInstance.on('zoomstart', clearActiveSpiderfy);
     mapInstance.on('dragstart', (e) => {
+      clearActiveSpiderfy();
       autoCollapseLayerPanel(e);
       closeMobileSheetOnMapPan(e);
       collapseLegendDesc();
     });
     mapInstance.on('touchstart', () => {
+      clearActiveSpiderfy();
       collapseLegendDesc();
     });
     mapInstance.on('click', (e) => {
+      clearActiveSpiderfy();
       autoCollapseLayerPanel(e);
       closeMobileSheetOnMapPan(e);
       collapseLegendDesc();
@@ -1180,7 +1211,15 @@ export function createMapViewer(options) {
     }
 
     mapInstance.on('zoom', handleZoomAndMove);
-    mapInstance.on('zoomend', handleZoomAndMove);
+    mapInstance.on('zoomend', () => {
+      handleZoomAndMove();
+      if (activeLegendLayers.has('doh-roads')) {
+        updateDOHHighwayMarkers();
+      }
+      if (isTraffyFloodVisible) {
+        updateTraffyFloodMarkers();
+      }
+    });
     mapInstance.on('moveend', () => {
       const zoom = mapInstance.getZoom();
       if (zoom >= 8.0 && zoom <= 12.5) {
@@ -2165,7 +2204,7 @@ export function createMapViewer(options) {
       if (lId === 'gfs') return !!(mapInstance && mapInstance.getLayer('layer-gfs-fill') && mapInstance.getLayoutProperty('layer-gfs-fill', 'visibility') === 'visible');
       if (lId === 'sat-water') return !!(mapInstance && mapInstance.getLayer('nasa-water-satellite-layer') && mapInstance.getLayoutProperty('nasa-water-satellite-layer', 'visibility') === 'visible');
       if (lId === 'sat-clouds') return !!(mapInstance && mapInstance.getLayer('nasa-cloud-satellite-layer') && mapInstance.getLayoutProperty('nasa-cloud-satellite-layer', 'visibility') === 'visible');
-      if (lId === 'wind-field') return !!(windFieldLayer && windFieldLayer.canvas && windFieldLayer.canvas.style.display !== 'none');
+      if (lId === 'wind-field') return !!(windFieldLayer && ((windFieldLayer.isVisible && windFieldLayer.isVisible()) || (windFieldLayer.canvas && windFieldLayer.canvas.style.display !== 'none')));
       if (lId === 'traffic') return !!(mapInstance && mapInstance.getLayer('layer-traffic') && mapInstance.getLayoutProperty('layer-traffic', 'visibility') === 'visible');
       if (lId === 'dmr-geology') return isGeologyActive();
       if (lId === 'dams') return activeLegendLayers.has('dams');
@@ -2460,6 +2499,286 @@ export function createMapViewer(options) {
   }
 
   const dohHighwayMarkers = [];
+  let currentDohFloodedFeatures = [];
+  let dohLayersBound = false;
+  let activeSpiderfyMarker = null;
+
+  function clearActiveSpiderfy() {
+    if (activeSpiderfyMarker) {
+      activeSpiderfyMarker.remove();
+      activeSpiderfyMarker = null;
+    }
+  }
+
+  function selectDOHItem(p, lat, lng) {
+    if (options.onStationSelect) {
+      options.onStationSelect({
+        isDohRoad: true,
+        id: p.id,
+        highwayNo: p.highwayNo,
+        routeName: p.routeName,
+        section: p.section,
+        kmRange: p.kmRange,
+        province: p.province,
+        amphoe: p.amphoe,
+        waterDepthCm: p.waterDepthCm,
+        passable: p.passable,
+        statusLabel: p.statusLabel,
+        severity: p.severity,
+        cause: p.cause,
+        detour: p.detour,
+        reportedTime: p.reportedTime,
+        agency: p.agency || 'กรมทางหลวง (DOH)',
+        lat,
+        lng
+      });
+    }
+  }
+
+  function selectTraffyItem(p, lat, lng) {
+    if (currentStationPopup) {
+      currentStationPopup.remove();
+      currentStationPopup = null;
+    }
+    if (options.onStationSelect) {
+      options.onStationSelect({
+        ...p,
+        isTraffy: true,
+        lat,
+        lng,
+        province: p.province || 'กรุงเทพมหานคร'
+      });
+    }
+  }
+
+  function handleClusterExpansionZoom(cluster, type) {
+    if (!mapInstance || !cluster) return;
+    clearActiveSpiderfy();
+
+    const [minLng, minLat] = cluster.bounds[0];
+    const [maxLng, maxLat] = cluster.bounds[1];
+    const lngSpan = Math.abs(maxLng - minLng);
+    const latSpan = Math.abs(maxLat - minLat);
+
+    // If points are spatially concentrated in one location (< ~500m)
+    if (lngSpan < 0.005 && latSpan < 0.005) {
+      mapInstance.flyTo({
+        center: cluster.center,
+        zoom: 12.5,
+        speed: 1.2
+      });
+      if (cluster.items && cluster.items.length > 1) {
+        setTimeout(() => {
+          spiderfyOverlappingPins(cluster.items, cluster.center, type);
+        }, 650);
+      }
+    } else {
+      // Cluster Expansion Zoom to bounds of the cluster
+      const targetMaxZoom = cluster.level === 'region' ? 8.6 : 11.2;
+      mapInstance.fitBounds(cluster.bounds, {
+        padding: { top: 90, bottom: 90, left: 90, right: 90 },
+        maxZoom: targetMaxZoom,
+        duration: 600
+      });
+    }
+  }
+
+  function spiderfyOverlappingPins(items, centerCoords, type) {
+    clearActiveSpiderfy();
+    if (!items || items.length === 0) return;
+    if (items.length === 1) {
+      const it = items[0];
+      const p = it.properties || it;
+      const coords = it.coords || centerCoords;
+      if (type === 'doh') {
+        selectDOHItem(p, coords[1], coords[0]);
+      } else {
+        selectTraffyItem(p, coords[1], coords[0]);
+      }
+      return;
+    }
+
+    const offsets = calculateSpiderfyOffsets(items.length, 52);
+    const hubEl = document.createElement('div');
+    hubEl.className = 'spiderfy-cluster-hub';
+
+    const centerDot = document.createElement('div');
+    centerDot.className = 'spiderfy-center-dot';
+    centerDot.title = 'ยุบหมุดที่กางออก (คลิกเพื่อปิด)';
+    centerDot.addEventListener('click', (e) => {
+      e.stopPropagation();
+      clearActiveSpiderfy();
+    });
+    hubEl.appendChild(centerDot);
+
+    items.forEach((it, idx) => {
+      const offset = offsets[idx];
+      const spoke = document.createElement('div');
+      spoke.className = 'spiderfy-spoke-line';
+      spoke.style.width = `${offset.radius}px`;
+      spoke.style.transform = `rotate(${offset.angleDeg}deg)`;
+      hubEl.appendChild(spoke);
+
+      const node = document.createElement('div');
+      node.className = 'spiderfy-node';
+      node.style.transform = `translate(${offset.x}px, ${offset.y}px)`;
+
+      const p = it.properties || it;
+      const [lng, lat] = it.coords || centerCoords;
+
+      if (type === 'doh') {
+        const isPassable = !!p.passable;
+        const passColor = isPassable ? '#ea580c' : '#dc2626';
+        const cardClass = isPassable ? 'passable' : 'impassable';
+        const depthText = p.waterDepthCm ? `${p.waterDepthCm} ซม.` : '';
+        const routeDisplay = p.highwayNo ? String(p.highwayNo).trim() : '';
+
+        node.innerHTML = `
+          <div class="doh-minimal-pin ${cardClass}">
+            <div class="doh-minimal-icon-wrap ${cardClass}">
+              <svg class="traffy-road-svg doh-road-icon" viewBox="0 0 24 24" width="22" height="22" fill="none">
+                <circle cx="12" cy="12" r="10.5" fill="${passColor}" stroke="#ffffff" stroke-width="2"/>
+                <path d="M7 18.5L9.5 5.5H14.5L17 18.5H7Z" fill="#0f172a" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round"/>
+                <line x1="12" y1="6.5" x2="12" y2="9" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="12" y1="11" x2="12" y2="13.5" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="12" y1="15.5" x2="12" y2="18" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="doh-minimal-tag ${cardClass}">
+              ${routeDisplay ? `<span class="doh-route-label">${routeDisplay}</span>` : ''}
+              ${depthText ? `<span class="doh-depth-label">${depthText}</span>` : ''}
+            </div>
+          </div>
+        `;
+
+        node.addEventListener('click', (e) => {
+          e.stopPropagation();
+          clearActiveSpiderfy();
+          selectDOHItem(p, lat, lng);
+        });
+      } else {
+        node.className = `spiderfy-node traffy-road-marker-pin ${p.stateClass || 'status-warning'}`;
+        node.innerHTML = `
+          <div class="traffy-pin-inner">
+            <img src="${traffyLogoImg}" class="traffy-fondue-pin-logo" alt="Traffy Fondue" width="34" height="34" />
+            <span class="traffy-status-badge ${p.stateClass || 'status-warning'}"></span>
+          </div>
+        `;
+
+        node.addEventListener('click', (e) => {
+          e.stopPropagation();
+          clearActiveSpiderfy();
+          selectTraffyItem(p, lat, lng);
+        });
+      }
+
+      hubEl.appendChild(node);
+    });
+
+    activeSpiderfyMarker = new maplibregl.Marker({ element: hubEl, anchor: 'center' })
+      .setLngLat(centerCoords)
+      .addTo(mapInstance);
+  }
+
+  function updateDOHHighwayMarkers() {
+    dohHighwayMarkers.forEach((m) => m.remove());
+    dohHighwayMarkers.length = 0;
+
+    const isDohVisible = activeLegendLayers.has('doh-roads');
+    if (!isDohVisible || !currentDohFloodedFeatures || currentDohFloodedFeatures.length === 0) {
+      return;
+    }
+
+    const zoom = mapInstance ? mapInstance.getZoom() : 7.5;
+    const clusteredOrPins = clusterPointsByZoom(currentDohFloodedFeatures, zoom, 'doh');
+
+    clusteredOrPins.forEach((entry) => {
+      if (entry.isCluster) {
+        const el = document.createElement('div');
+        el.className = `doh-cluster-pin ${entry.dohColor.dominantClass}`;
+        el.setAttribute('data-level', entry.level);
+        el.setAttribute('data-name', entry.name);
+        el.title = `[กรมทางหลวง] ${entry.title} - คลิกเพื่อขยายดูพื้นที่`;
+
+        el.innerHTML = `
+          <div class="doh-cluster-icon-wrap ${entry.dohColor.dominantClass}">
+            <svg class="traffy-road-svg doh-road-icon" viewBox="0 0 24 24" width="26" height="26" fill="none">
+              <circle cx="12" cy="12" r="10.5" fill="${entry.dohColor.dominantColor}" stroke="#ffffff" stroke-width="2"/>
+              <path d="M7 18.5L9.5 5.5H14.5L17 18.5H7Z" fill="#0f172a" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round"/>
+              <line x1="12" y1="6.5" x2="12" y2="9" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+              <line x1="12" y1="11" x2="12" y2="13.5" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+              <line x1="12" y1="15.5" x2="12" y2="18" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <span class="doh-cluster-count-badge ${entry.dohColor.dominantClass}">${entry.count}</span>
+          </div>
+          <div class="doh-cluster-label-tag ${entry.dohColor.dominantClass}">
+            <span class="doh-cluster-name">${entry.name}</span>
+            <span class="doh-cluster-qty">${entry.count} จุด</span>
+          </div>
+        `;
+
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          handleClusterExpansionZoom(entry, 'doh');
+        });
+
+        const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+          .setLngLat(entry.center)
+          .addTo(mapInstance);
+
+        dohHighwayMarkers.push(marker);
+      } else {
+        const p = entry.properties;
+        const [lng, lat] = entry.coords;
+
+        const el = document.createElement('div');
+        el.className = 'doh-highway-marker-pin';
+        el.setAttribute('data-id', p.id);
+        el.title = `[กรมทางหลวง] ${p.highwayNo} (${p.routeName}) กม. ${p.kmRange} - ${p.statusLabel}`;
+
+        const isPassable = !!p.passable;
+        const passColor = isPassable ? '#ea580c' : '#dc2626';
+        const cardClass = isPassable ? 'passable' : 'impassable';
+        const depthText = p.waterDepthCm ? `${p.waterDepthCm} ซม.` : '';
+        const routeDisplay = p.highwayNo ? String(p.highwayNo).trim() : '';
+
+        el.innerHTML = `
+          <div class="doh-minimal-pin ${cardClass}">
+            <div class="doh-minimal-icon-wrap ${cardClass}">
+              <svg class="traffy-road-svg doh-road-icon" viewBox="0 0 24 24" width="22" height="22" fill="none">
+                <circle cx="12" cy="12" r="10.5" fill="${passColor}" stroke="#ffffff" stroke-width="2"/>
+                <path d="M7 18.5L9.5 5.5H14.5L17 18.5H7Z" fill="#0f172a" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round"/>
+                <line x1="12" y1="6.5" x2="12" y2="9" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="12" y1="11" x2="12" y2="13.5" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+                <line x1="12" y1="15.5" x2="12" y2="18" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+              ${entry.hasOverlap ? `<span class="doh-overlap-indicator">+${entry.overlappingGroup.length}</span>` : ''}
+            </div>
+            <div class="doh-minimal-tag ${cardClass}">
+              ${routeDisplay ? `<span class="doh-route-label">${routeDisplay}</span>` : ''}
+              ${depthText ? `<span class="doh-depth-label">${depthText}</span>` : ''}
+            </div>
+          </div>
+        `;
+
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (entry.hasOverlap) {
+            spiderfyOverlappingPins(entry.overlappingGroup, entry.coords, 'doh');
+          } else {
+            clearActiveSpiderfy();
+            selectDOHItem(p, lat, lng);
+          }
+        });
+
+        const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+          .setLngLat([lng, lat])
+          .addTo(mapInstance);
+
+        dohHighwayMarkers.push(marker);
+      }
+    });
+  }
 
   async function renderDOHHighwayFloodLines() {
     activeLegendLayers.add('doh-roads');
@@ -2476,6 +2795,8 @@ export function createMapViewer(options) {
     const floodedFeatures = (dohFloodData?.features || []).filter(
       (f) => f.properties && f.properties.waterDepthCm > 0 && !f.properties.endDate && !f.properties.endDateText
     );
+    currentDohFloodedFeatures = floodedFeatures;
+
     const filteredDohData = {
       ...(dohFloodData || { type: 'FeatureCollection' }),
       features: floodedFeatures
@@ -2553,118 +2874,24 @@ export function createMapViewer(options) {
       });
     }
 
-    // Render official Department of Highways shield marker pins (สัญลักษณ์กรมทางหลวง)
-    dohHighwayMarkers.forEach((m) => m.remove());
-    dohHighwayMarkers.length = 0;
+    if (!dohLayersBound) {
+      dohLayersBound = true;
+      ['layer-doh-roads-line', 'layer-doh-roads-core'].forEach((layerId) => {
+        mapInstance.on('click', layerId, (e) => {
+          const p = e.features[0].properties;
+          selectDOHItem(p, e.lngLat.lat, e.lngLat.lng);
+        });
 
-    floodedFeatures.forEach((feature) => {
-      const p = feature.properties;
-      const coords = feature.geometry.coordinates;
-      if (!coords || coords.length === 0) return;
-      const midIdx = Math.floor(coords.length / 2);
-      const [lng, lat] = coords[midIdx];
-
-      const el = document.createElement('div');
-      el.className = 'doh-highway-marker-pin';
-      el.setAttribute('data-id', p.id);
-      el.title = `[กรมทางหลวง] ${p.highwayNo} (${p.routeName}) กม. ${p.kmRange} - ${p.statusLabel}`;
-
-      const isPassable = !!p.passable;
-      const passColor = isPassable ? '#ea580c' : '#dc2626';
-      const cardClass = isPassable ? 'passable' : 'impassable';
-      const depthText = p.waterDepthCm ? `${p.waterDepthCm} ซม.` : '';
-
-      // Display actual route / abbreviation as received from API without hardcoding 'ทล.'
-      const routeDisplay = p.highwayNo ? String(p.highwayNo).trim() : '';
-
-      el.innerHTML = `
-        <div class="doh-minimal-pin ${cardClass}">
-          <div class="doh-minimal-icon-wrap ${cardClass}">
-            <svg class="traffy-road-svg doh-road-icon" viewBox="0 0 24 24" width="22" height="22" fill="none">
-              <circle cx="12" cy="12" r="10.5" fill="${passColor}" stroke="#ffffff" stroke-width="2"/>
-              <path d="M7 18.5L9.5 5.5H14.5L17 18.5H7Z" fill="#0f172a" stroke="#ffffff" stroke-width="1.2" stroke-linejoin="round"/>
-              <line x1="12" y1="6.5" x2="12" y2="9" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
-              <line x1="12" y1="11" x2="12" y2="13.5" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
-              <line x1="12" y1="15.5" x2="12" y2="18" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
-            </svg>
-          </div>
-          <div class="doh-minimal-tag ${cardClass}">
-            ${routeDisplay ? `<span class="doh-route-label">${routeDisplay}</span>` : ''}
-            ${depthText ? `<span class="doh-depth-label">${depthText}</span>` : ''}
-          </div>
-        </div>
-      `;
-
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (options.onStationSelect) {
-          options.onStationSelect({
-            isDohRoad: true,
-            id: p.id,
-            highwayNo: p.highwayNo,
-            routeName: p.routeName,
-            section: p.section,
-            kmRange: p.kmRange,
-            province: p.province,
-            amphoe: p.amphoe,
-            waterDepthCm: p.waterDepthCm,
-            passable: p.passable,
-            statusLabel: p.statusLabel,
-            severity: p.severity,
-            cause: p.cause,
-            detour: p.detour,
-            reportedTime: p.reportedTime,
-            agency: p.agency || 'กรมทางหลวง (DOH)',
-            lat,
-            lng
-          });
-        }
+        mapInstance.on('mouseenter', layerId, () => {
+          mapInstance.getCanvas().style.cursor = 'pointer';
+        });
+        mapInstance.on('mouseleave', layerId, () => {
+          mapInstance.getCanvas().style.cursor = '';
+        });
       });
+    }
 
-      const isDohVisible = activeLegendLayers.has('doh-roads');
-      el.style.display = isDohVisible ? 'flex' : 'none';
-
-      const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
-        .setLngLat([lng, lat])
-        .addTo(mapInstance);
-
-      dohHighwayMarkers.push(marker);
-    });
-
-    ['layer-doh-roads-line', 'layer-doh-roads-core'].forEach((layerId) => {
-      mapInstance.on('click', layerId, (e) => {
-        const p = e.features[0].properties;
-        if (options.onStationSelect) {
-          options.onStationSelect({
-            isDohRoad: true,
-            id: p.id,
-            highwayNo: p.highwayNo,
-            routeName: p.routeName,
-            section: p.section,
-            kmRange: p.kmRange,
-            province: p.province,
-            amphoe: p.amphoe,
-            waterDepthCm: p.waterDepthCm,
-            passable: p.passable,
-            statusLabel: p.statusLabel,
-            severity: p.severity,
-            cause: p.cause,
-            detour: p.detour,
-            reportedTime: p.reportedTime,
-            agency: p.agency || 'กรมทางหลวง (DOH)',
-            lat: e.lngLat.lat,
-            lng: e.lngLat.lng
-          });
-        }
-      });
-
-      mapInstance.on('mouseenter', layerId, () => {
-        mapInstance.getCanvas().style.cursor = 'pointer';
-      });
-      mapInstance.on('mouseleave', layerId, () => {
-        mapInstance.getCanvas().style.cursor = '';
-      });
-    });
+    updateDOHHighwayMarkers();
     activeLegendLayers.add('doh-roads');
     updateBottomLegendBar();
   }
@@ -2724,51 +2951,85 @@ export function createMapViewer(options) {
       .addTo(mapInstance);
   }
 
-  function renderTraffyFloodMarkers(geo) {
+  function updateTraffyFloodMarkers() {
     traffyFloodMarkers.forEach((m) => m.remove());
     traffyFloodMarkers.length = 0;
 
-    if (!geo || !geo.features || !isTraffyFloodVisible) return;
+    if (!isTraffyFloodVisible || !traffyFloodGeoJSON || !Array.isArray(traffyFloodGeoJSON.features)) {
+      return;
+    }
 
-    geo.features.forEach((feature) => {
-      const p = feature.properties;
-      const coords = feature.geometry.coordinates;
-      if (!coords || isNaN(coords[0]) || isNaN(coords[1])) return;
+    const zoom = mapInstance ? mapInstance.getZoom() : 7.5;
+    const clusteredOrPins = clusterPointsByZoom(traffyFloodGeoJSON.features, zoom, 'traffy');
 
-      const el = document.createElement('div');
-      el.className = `traffy-road-marker-pin ${p.stateClass}`;
-      el.setAttribute('data-ticket', p.ticket_id);
-      el.title = `[Traffy Fondue] ${p.address} - ${p.state}: ${p.description}`;
-      el.innerHTML = `
-        <div class="traffy-pin-inner">
-          <img src="${traffyLogoImg}" class="traffy-fondue-pin-logo" alt="Traffy Fondue" width="34" height="34" />
-          <span class="traffy-status-badge ${p.stateClass}"></span>
-        </div>
-      `;
+    clusteredOrPins.forEach((entry) => {
+      if (entry.isCluster) {
+        const el = document.createElement('div');
+        el.className = 'traffy-cluster-pin';
+        el.setAttribute('data-level', entry.level);
+        el.setAttribute('data-name', entry.name);
+        el.title = `[Traffy Fondue] ${entry.title} - คลิกเพื่อขยายดูพื้นที่`;
 
-      el.addEventListener('click', (e) => {
-        e.stopPropagation();
-        if (currentStationPopup) {
-          currentStationPopup.remove();
-          currentStationPopup = null;
-        }
-        if (options.onStationSelect) {
-          options.onStationSelect({
-            ...p,
-            isTraffy: true,
-            lat: coords[1],
-            lng: coords[0],
-            province: 'กรุงเทพมหานคร'
-          });
-        }
-      });
+        el.innerHTML = `
+          <div class="traffy-cluster-icon-wrap">
+            <img src="${traffyLogoImg}" class="traffy-fondue-pin-logo" alt="Traffy Fondue" width="34" height="34" />
+            <span class="traffy-cluster-count-badge">${entry.count}</span>
+          </div>
+          <div class="traffy-cluster-label-tag">
+            <span class="traffy-cluster-name">${entry.name}</span>
+            <span class="traffy-cluster-qty">${entry.count} เรื่อง</span>
+          </div>
+        `;
 
-      const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-        .setLngLat(coords)
-        .addTo(mapInstance);
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          handleClusterExpansionZoom(entry, 'traffy');
+        });
 
-      traffyFloodMarkers.push(marker);
+        const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+          .setLngLat(entry.center)
+          .addTo(mapInstance);
+
+        traffyFloodMarkers.push(marker);
+      } else {
+        const p = entry.properties;
+        const [lng, lat] = entry.coords;
+
+        const el = document.createElement('div');
+        el.className = `traffy-road-marker-pin ${p.stateClass || 'status-warning'}`;
+        el.setAttribute('data-ticket', p.ticket_id);
+        el.title = `[Traffy Fondue] ${p.address} - ${p.state}: ${p.description}`;
+
+        el.innerHTML = `
+          <div class="traffy-pin-inner">
+            <img src="${traffyLogoImg}" class="traffy-fondue-pin-logo" alt="Traffy Fondue" width="34" height="34" />
+            <span class="traffy-status-badge ${p.stateClass || 'status-warning'}"></span>
+            ${entry.hasOverlap ? `<span class="traffy-overlap-indicator">+${entry.overlappingGroup.length}</span>` : ''}
+          </div>
+        `;
+
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (entry.hasOverlap) {
+            spiderfyOverlappingPins(entry.overlappingGroup, entry.coords, 'traffy');
+          } else {
+            clearActiveSpiderfy();
+            selectTraffyItem(p, lat, lng);
+          }
+        });
+
+        const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
+          .setLngLat([lng, lat])
+          .addTo(mapInstance);
+
+        traffyFloodMarkers.push(marker);
+      }
     });
+  }
+
+  function renderTraffyFloodMarkers(geo) {
+    if (geo) traffyFloodGeoJSON = geo;
+    updateTraffyFloodMarkers();
   }
 
   async function initTraffyFloodLayer() {
@@ -2789,12 +3050,13 @@ export function createMapViewer(options) {
     isTraffyFloodVisible = visible;
     if (visible) {
       if (traffyFloodGeoJSON) {
-        renderTraffyFloodMarkers(traffyFloodGeoJSON);
+        updateTraffyFloodMarkers();
       } else {
         initTraffyFloodLayer();
       }
       activeLegendLayers.add('traffy-flood');
     } else {
+      clearActiveSpiderfy();
       traffyFloodMarkers.forEach((m) => m.remove());
       traffyFloodMarkers.length = 0;
       activeLegendLayers.delete('traffy-flood');
@@ -2919,16 +3181,18 @@ export function createMapViewer(options) {
       if (mapInstance.getLayer('layer-doh-roads-glow')) mapInstance.setLayoutProperty('layer-doh-roads-glow', 'visibility', 'none');
       if (mapInstance.getLayer('layer-doh-roads-line')) mapInstance.setLayoutProperty('layer-doh-roads-line', 'visibility', 'none');
       if (mapInstance.getLayer('layer-doh-roads-core')) mapInstance.setLayoutProperty('layer-doh-roads-core', 'visibility', 'none');
-      dohHighwayMarkers.forEach((m) => {
-        m.getElement().style.display = isVisible ? 'flex' : 'none';
-      });
       if (isVisible) {
+        updateDOHHighwayMarkers();
         showToast('เปิดเลเยอร์น้ำท่วมทางหลวงทั่วประเทศ (กรมทางหลวง DOH สายด่วน 1586)', '🛣️');
         const zoom = mapInstance.getZoom();
         const center = mapInstance.getCenter();
         if (zoom > 9.0 && (Math.abs(center.lat - 13.75) < 0.4 && Math.abs(center.lng - 100.5) < 0.4)) {
           mapInstance.flyTo({ center: [100.6, 14.4], zoom: 7.8, speed: 1.2 });
         }
+      } else {
+        clearActiveSpiderfy();
+        dohHighwayMarkers.forEach((m) => m.remove());
+        dohHighwayMarkers.length = 0;
       }
       updateBottomLegendBar();
     } else if (layerId === 'traffy-flood') {
