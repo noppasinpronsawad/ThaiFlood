@@ -29,6 +29,9 @@ export function trackEvent(path = location.pathname, title = document.title) {
  * Returns formatted count string (e.g. "1,420") or null if unreachable
  */
 export async function getVisitorCount() {
+  if (typeof location !== 'undefined' && (location.hostname === '127.0.0.1' || location.hostname === 'localhost')) {
+    return 'Active';
+  }
   try {
     // GoatCounter JSON counter endpoint
     const res = await fetch(`${GOATCOUNTER_ENDPOINT}/counter//.json`, {

@@ -9,16 +9,35 @@ import { generateFlowVectorPoints } from '../services/hydrologyService.js';
 import { buildDamGeoJSON } from '../services/damService.js';
 import { identifyRockUnit } from '../services/geologyService.js';
 import { getNearestProvince, fetchCurrentProvinceWeather } from '../services/weatherService.js';
-import { fetchNWPModelData, buildGFSGeoJSON, buildECMWFGeoJSON, getFallbackNWPData } from '../services/nwpForecastService.js';
+import { 
+  fetchNWPModelData, 
+  buildGFSGeoJSON, 
+  buildECMWFGeoJSON, 
+  getFallbackNWPData,
+  generateContinuousWeatherRaster,
+  getNWPValueAtCoordinate,
+  NWP_RASTER_BOUNDS
+} from '../services/nwpForecastService.js';
 import { getDohHighwayGeoJSON } from '../services/dohHighwayFloodService.js';
 import { createWindFieldLayer } from './WindFieldLayer.js';
 import { evaluateDamRuleCurve } from '../services/damRuleCurveService.js';
 import { getTraffyFloodGeoJSON } from '../services/traffyFondueService.js';
 import { clusterPointsByZoom, calculateSpiderfyOffsets } from '../services/markerClusterService.js';
+import { getCctvGeoJSON } from '../services/cctvService.js';
+import { computeCurrentFloodPolygons, compute7DayRiskPolygons } from '../services/floodRiskService.js';
 import traffyLogoImg from '../assets/images/traffy-fondue-logo.png';
+import { 
+  t, 
+  getLanguage, 
+  localizeName, 
+  localizeProvince, 
+  localizeRegion, 
+  formatUnit, 
+  formatDateTimeCE 
+} from '../services/i18nService.js';
 
 export function createMapViewer(options) {
-  const { basinsData, floodNowData, forecast7dData, stationsData, damsData = [], dohRoadsData: initialDohRoadsData = null, onStationSelect } = options;
+  let { basinsData, floodNowData, forecast7dData, stationsData = [], damsData = [], dohRoadsData: initialDohRoadsData = null, onStationSelect } = options;
   let dohFloodData = initialDohRoadsData;
 
   const container = document.createElement('div');
@@ -151,6 +170,131 @@ export function createMapViewer(options) {
 
   let mapInstance = null;
   let activeBasemap = 'street';
+  let updateBasemapLabelFn = null;
+  let currentProvinceWeatherData = null;
+
+  function updateBasemapDisplay(name, mode) {
+    if (mode) activeBasemap = mode;
+    const modeKey = activeBasemap === 'satellite' ? 'basemap_satellite' : (activeBasemap === 'topo' ? 'basemap_topo' : 'basemap_street');
+    const localizedName = t(modeKey);
+    const basemapActiveLabel = container.querySelector('#basemap-active-name');
+    if (basemapActiveLabel) basemapActiveLabel.textContent = localizedName;
+    const scrimTitle = container.querySelector('#basemap-scrim-title');
+    if (scrimTitle) scrimTitle.textContent = localizedName;
+    const basemapActiveThumb = container.querySelector('#basemap-active-thumb');
+    if (basemapActiveThumb && mode) {
+      basemapActiveThumb.className = `basemap-thumb thumb-${mode}`;
+    }
+  }
+
+  function updateMapViewerLanguage(lang) {
+    const isEn = lang === 'en';
+
+    // 1. Controls
+    if (locateBtn) {
+      locateBtn.title = t('ctrl_locate_title');
+      locateBtn.setAttribute('aria-label', t('ctrl_locate'));
+    }
+    const zoomInBtn = container.querySelector('#gmaps-zoom-in');
+    if (zoomInBtn) zoomInBtn.title = t('ctrl_zoom_in');
+    const zoomOutBtn = container.querySelector('#gmaps-zoom-out');
+    if (zoomOutBtn) zoomOutBtn.title = t('ctrl_zoom_out');
+    const btn3d = container.querySelector('#gmaps-btn-3d');
+    if (btn3d) btn3d.title = t('basemap_3d');
+
+    // 2. Basemap Switcher
+    const basemapTrigger = container.querySelector('#gmaps-basemap-trigger');
+    if (basemapTrigger) {
+      basemapTrigger.title = t('basemap_trigger_title');
+      basemapTrigger.setAttribute('aria-label', t('basemap_label'));
+    }
+    const basemapExpandArrow = container.querySelector('#basemap-expand-arrow');
+    if (basemapExpandArrow) basemapExpandArrow.title = t('basemap_expand_arrow_title');
+
+    const activeModeKey = activeBasemap === 'satellite' ? 'basemap_satellite' : (activeBasemap === 'topo' ? 'basemap_topo' : 'basemap_street');
+    const scrimTitle = container.querySelector('#basemap-scrim-title');
+    if (scrimTitle) scrimTitle.textContent = t(activeModeKey);
+
+    const headerLabel = container.querySelector('.basemap-header-label');
+    if (headerLabel) {
+      headerLabel.innerHTML = `${t('basemap_label')}: <b id="basemap-active-name">${t(activeModeKey)}</b>`;
+    }
+
+    const cardStreet = container.querySelector('#btn-mode-street');
+    if (cardStreet) {
+      cardStreet.title = t('basemap_street_title');
+      const nameEl = cardStreet.querySelector('.basemap-card-name');
+      if (nameEl) nameEl.textContent = t('basemap_street');
+    }
+    const cardSat = container.querySelector('#btn-mode-satellite');
+    if (cardSat) {
+      cardSat.title = t('basemap_satellite_title');
+      const nameEl = cardSat.querySelector('.basemap-card-name');
+      if (nameEl) nameEl.textContent = t('basemap_satellite');
+    }
+    const cardTopo = container.querySelector('#btn-mode-topo');
+    if (cardTopo) {
+      cardTopo.title = t('basemap_topo_title');
+      const nameEl = cardTopo.querySelector('.basemap-card-name');
+      if (nameEl) nameEl.textContent = t('basemap_topo');
+    }
+
+    // 3. Floating HUDs
+    const demBadge = container.querySelector('#gmaps-dem-badge');
+    if (demBadge) {
+      demBadge.title = t('dem_title');
+      const titleEl = demBadge.querySelector('.dem-badge-title');
+      if (titleEl) titleEl.textContent = t('dem_title');
+      const elevEl = demBadge.querySelector('.dem-badge-elev');
+      if (elevEl && (elevEl.textContent.includes('เลื่อนเมาส์') || elevEl.textContent.includes('Hover'))) {
+        elevEl.textContent = t('dem_hover');
+      }
+      const unitEl = demBadge.querySelector('.dem-badge-unit');
+      if (unitEl) unitEl.textContent = t('dem_unit');
+    }
+
+    const weatherPill = container.querySelector('#gmaps-apple-weather-pill');
+    function updateWeatherPillLanguage(weatherData = currentProvinceWeatherData, enMode = isEn) {
+      if (!weatherPill) return;
+      weatherPill.title = t('weather_pill_title');
+      const provEl = weatherPill.querySelector('#pill-weather-prov');
+      const descEl = weatherPill.querySelector('#pill-weather-desc');
+      if (weatherData) {
+        if (provEl) provEl.textContent = enMode ? (weatherData.provinceEn || weatherData.province) : weatherData.province;
+        if (descEl) descEl.textContent = enMode ? (weatherData.weatherDescEn || weatherData.weatherDesc || '') : (weatherData.weatherDesc || '');
+        weatherPill.title = enMode
+          ? `${weatherData.provinceEn || weatherData.province}: ${weatherData.temp}°C (${weatherData.weatherDescEn || weatherData.weatherDesc}) - Click for 7-day forecast`
+          : `จ.${weatherData.province}: ${weatherData.temp}°C (${weatherData.weatherDesc}) - คลิกดูพยากรณ์ฝน 7 วัน`;
+      } else if (provEl && (provEl.textContent === 'กำลังโหลด...' || provEl.textContent === 'Loading...')) {
+        provEl.textContent = t('weather_pill_loading');
+      }
+    }
+    updateWeatherPillLanguage(currentProvinceWeatherData, isEn);
+
+    const disclaimer = container.querySelector('#gmaps-disclaimer-pill');
+    if (disclaimer) {
+      disclaimer.title = t('disclaimer_title');
+      const textEl = disclaimer.querySelector('.disclaimer-text');
+      if (textEl) textEl.textContent = t('disclaimer_text');
+    }
+
+    // 4. Legend Desc Toggle
+    const descText = container.querySelector('.desc-toggle-text');
+    if (descText) descText.textContent = isEn ? 'Legend' : 'คำอธิบาย';
+
+    // 5. Forecast Chips (Today, +1 Day...)
+    const chips = container.querySelectorAll('.float-chip');
+    chips.forEach((c) => {
+      const day = parseInt(c.getAttribute('data-day'), 10);
+      if (day === 0) c.textContent = isEn ? 'Today' : 'วันนี้';
+      else c.textContent = isEn ? `+${day}d` : `+${day} วัน`;
+    });
+  }
+
+  window.addEventListener('thaiflood:language-changed', (e) => {
+    updateMapViewerLanguage(e.detail.lang);
+  });
+
   const flowMarkers = [];
   let damMarkers = [];
   let cachedNWPData = getFallbackNWPData();
@@ -238,25 +382,29 @@ export function createMapViewer(options) {
   windLegend.className = 'gmaps-wind-legend';
   windLegend.id = 'gmaps-wind-legend';
   windLegend.style.display = 'none';
-  windLegend.innerHTML = `
-    <div style="font-weight: 700; font-size: 11.5px; color: #1e293b; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
-      <span style="display: flex; align-items: center; gap: 5px;">
-        <span>💨</span>
-        <span>กระแสลมผิวพื้น 10 เมตร (WMO Scale)</span>
-      </span>
-      <span style="font-size: 10px; color: #0284c7; font-weight: 600;">m/s & km/h</span>
-    </div>
-    <div style="height: 8px; border-radius: 4px; background: linear-gradient(to right, #38bdf8, #34d399, #a3e635, #facc15, #fb923c, #f43f5e, #c084fc); margin-bottom: 4px;"></div>
-    <div style="display: flex; justify-content: space-between; font-size: 9.5px; color: #475569; font-weight: 600;">
-      <span>0 (ลมอ่อน)</span>
-      <span>5 m/s (18 km/h)</span>
-      <span>12 m/s (43 km/h)</span>
-      <span>24+ m/s (พายุ)</span>
-    </div>
-    <div style="font-size: 9.5px; color: #64748b; margin-top: 4px; line-height: 1.35;">
-      💡 คลิกบนแผนที่ ณ พิกัดใดก็ได้เพื่ออ่านค่าความเร็วและทิศทางลมสด
-    </div>
-  `;
+
+  function updateWindLegendUI() {
+    windLegend.innerHTML = `
+      <div style="font-weight: 700; font-size: 11.5px; color: #1e293b; margin-bottom: 4px; display: flex; align-items: center; justify-content: space-between;">
+        <span style="display: flex; align-items: center; gap: 5px;">
+          <span>💨</span>
+          <span>${t('wind_legend_title')}</span>
+        </span>
+        <span style="font-size: 10px; color: #0284c7; font-weight: 600;">${t('wind_legend_units')}</span>
+      </div>
+      <div style="height: 8px; border-radius: 4px; background: linear-gradient(to right, #38bdf8, #34d399, #a3e635, #facc15, #fb923c, #f43f5e, #c084fc); margin-bottom: 4px;"></div>
+      <div style="display: flex; justify-content: space-between; font-size: 9.5px; color: #475569; font-weight: 600;">
+        <span>${t('wind_legend_calm')}</span>
+        <span>${t('wind_legend_mod')}</span>
+        <span>${t('wind_legend_strong')}</span>
+        <span>${t('wind_legend_gale')}</span>
+      </div>
+      <div style="font-size: 9.5px; color: #64748b; margin-top: 4px; line-height: 1.35;">
+        ${t('wind_legend_tip')}
+      </div>
+    `;
+  }
+  updateWindLegendUI();
   container.appendChild(windLegend);
 
   function showToast(message, icon = '📍') {
@@ -277,19 +425,19 @@ export function createMapViewer(options) {
 
   function locateUser() {
     if (!navigator.geolocation) {
-      showToast('เบราว์เซอร์ของคุณไม่รองรับการระบุพิกัด Geolocation', '⚠️');
+      showToast(t('toast_locate_unsupported'), '⚠️');
       return;
     }
 
     locateBtn.classList.add('loading');
-    locateBtn.title = 'กำลังค้นหาตำแหน่งของคุณ...';
-    showToast('กำลังค้นหาตำแหน่งปัจจุบันของคุณจาก GPS...', '📡');
+    locateBtn.title = t('toast_locate_searching');
+    showToast(t('toast_locate_searching'), '📡');
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
         locateBtn.classList.remove('loading');
         locateBtn.classList.add('active');
-        locateBtn.title = 'ตำแหน่งของฉัน (ตรวจพบพิกัดแล้ว)';
+        locateBtn.title = t('ctrl_locate_found');
 
         const { latitude: lat, longitude: lng, accuracy } = position.coords;
 
@@ -304,7 +452,7 @@ export function createMapViewer(options) {
           if (!userLocationMarker) {
             const el = document.createElement('div');
             el.className = 'gmaps-user-marker';
-            el.title = 'ตำแหน่งปัจจุบันของคุณ (คลิกดูสถานะน้ำรอบตัว)';
+            el.title = getLanguage() === 'en' ? 'Your current location' : 'ตำแหน่งปัจจุบันของคุณ (คลิกดูสถานะน้ำรอบตัว)';
             el.innerHTML = `
               <div class="gmaps-user-pulse"></div>
               <div class="gmaps-user-dot"></div>
@@ -326,17 +474,17 @@ export function createMapViewer(options) {
           showUserLocationPopup(lat, lng, accuracy);
         }
 
-        showToast(`พบพิกัดของคุณแล้ว (ความแม่นยำ ±${Math.round(accuracy)} ม.)`, '🎯');
+        showToast(`${t('toast_locate_found_prefix')}${Math.round(accuracy)}${t('toast_locate_found_suffix')}`, '🎯');
       },
       (err) => {
         locateBtn.classList.remove('loading');
-        let msg = 'ไม่สามารถระบุตำแหน่งได้ กรุณาลองใหม่อีกครั้ง';
+        let msg = t('toast_locate_error');
         if (err.code === 1) {
-          msg = 'ไม่ได้รับอนุญาตให้เข้าถึงพิกัด (กรุณากด Allow หรือ อนุญาต บนเบราว์เซอร์)';
+          msg = t('toast_locate_permission_denied');
         } else if (err.code === 2) {
-          msg = 'ไม่พบสัญญาณตำแหน่งหรือ GPS (Position Unavailable)';
+          msg = t('toast_locate_unavailable');
         } else if (err.code === 3) {
-          msg = 'หมดเวลาค้นหาพิกัด (Geolocation Timeout)';
+          msg = t('toast_locate_timeout');
         }
         showToast(msg, '⚠️');
       },
@@ -383,9 +531,7 @@ export function createMapViewer(options) {
 
   locateBtn.addEventListener('click', locateUser);
 
-  setTimeout(() => {
-    initMap();
-  }, 50);
+  initMap();
 
   function initMap() {
     mapInstance = new maplibregl.Map({
@@ -489,6 +635,9 @@ export function createMapViewer(options) {
             maxzoom: 19,
             layout: {
               visibility: 'visible'
+            },
+            paint: {
+              'raster-opacity': 0
             }
           },
           {
@@ -498,7 +647,10 @@ export function createMapViewer(options) {
             minzoom: 0,
             maxzoom: 19,
             layout: {
-              visibility: 'none'
+              visibility: 'visible'
+            },
+            paint: {
+              'raster-opacity': 1
             }
           },
           {
@@ -615,12 +767,18 @@ export function createMapViewer(options) {
           }
         ]
       },
-      center: [100.5018, 13.7563],
-      zoom: 10.8,
+      center: [100.5, 13.75],
+      zoom: 1.6,
+      pitch: 52,
+      bearing: -10,
       maxZoom: 16,
-      minZoom: 5,
+      minZoom: 1,
       attributionControl: false
     });
+
+    if (typeof window !== 'undefined') {
+      window._debugMap = mapInstance;
+    }
 
     // Wire up custom Google Maps zoom buttons
     container.querySelector('#gmaps-zoom-in').addEventListener('click', () => {
@@ -653,18 +811,18 @@ export function createMapViewer(options) {
 
     function locateUser() {
       if (!navigator.geolocation) {
-        showToast('เบราว์เซอร์ของคุณไม่รองรับการระบุพิกัด Geolocation', '⚠️');
+        showToast(t('toast_locate_unsupported'), '⚠️');
         return;
       }
 
       locateBtn.classList.add('loading');
-      locateBtn.title = 'กำลังค้นหาตำแหน่งของคุณ...';
+      locateBtn.title = t('toast_locate_searching');
 
       navigator.geolocation.getCurrentPosition(
         (position) => {
           locateBtn.classList.remove('loading');
           locateBtn.classList.add('active');
-          locateBtn.title = 'ตำแหน่งของฉัน (ตรวจพบพิกัดแล้ว)';
+          locateBtn.title = t('ctrl_locate_found');
 
           const { latitude: lat, longitude: lng, accuracy } = position.coords;
 
@@ -680,7 +838,7 @@ export function createMapViewer(options) {
           if (!userLocationMarker) {
             const el = document.createElement('div');
             el.className = 'gmaps-user-marker';
-            el.title = 'ตำแหน่งปัจจุบันของคุณ (คลิกดูสถานะน้ำรอบตัว)';
+            el.title = getLanguage() === 'en' ? 'Your current location' : 'ตำแหน่งปัจจุบันของคุณ (คลิกดูสถานะน้ำรอบตัว)';
             el.innerHTML = `
               <div class="gmaps-user-pulse"></div>
               <div class="gmaps-user-dot"></div>
@@ -700,17 +858,17 @@ export function createMapViewer(options) {
           }
 
           showUserLocationPopup(lat, lng, accuracy);
-          showToast(`พบพิกัดของคุณแล้ว (ความแม่นยำ ±${Math.round(accuracy)} ม.)`, '🎯');
+          showToast(`${t('toast_locate_found_prefix')}${Math.round(accuracy)}${t('toast_locate_found_suffix')}`, '🎯');
         },
         (err) => {
           locateBtn.classList.remove('loading');
-          let msg = 'ไม่สามารถระบุตำแหน่งได้ กรุณาลองใหม่อีกครั้ง';
+          let msg = t('toast_locate_error');
           if (err.code === 1) {
-            msg = 'ไม่ได้รับอนุญาตให้เข้าถึงพิกัด (Geolocation Permission Denied)';
+            msg = t('toast_locate_permission_denied');
           } else if (err.code === 2) {
-            msg = 'ไม่พบสัญญาณตำแหน่งหรือ GPS (Position Unavailable)';
+            msg = t('toast_locate_unavailable');
           } else if (err.code === 3) {
-            msg = 'หมดเวลาค้นหาพิกัด (Geolocation Timeout)';
+            msg = t('toast_locate_timeout');
           }
           showToast(msg, '⚠️');
         },
@@ -784,14 +942,129 @@ export function createMapViewer(options) {
     };
 
     function updateBasemapLabel(name, mode) {
+      const currentMode = mode || activeBasemap;
+      const localizedName = currentMode === 'street' ? t('basemap_street') : (currentMode === 'satellite' ? t('basemap_satellite') : (currentMode === 'topo' ? t('basemap_topo') : name));
       if (basemapActiveLabel) {
-        basemapActiveLabel.textContent = name;
+        basemapActiveLabel.textContent = localizedName || name;
       }
       const scrimTitle = container.querySelector('#basemap-scrim-title');
-      if (scrimTitle && mode) {
-        scrimTitle.textContent = basemapShortNames[mode] || name;
+      if (scrimTitle && currentMode) {
+        scrimTitle.textContent = localizedName || name;
       }
     }
+    updateBasemapLabelFn = updateBasemapLabel;
+
+    function updateBasemapSwitcherCards() {
+      const headerLabel = container.querySelector('.basemap-header-label');
+      if (headerLabel) {
+        const modeKey = activeBasemap === 'street' ? 'basemap_street' : (activeBasemap === 'satellite' ? 'basemap_satellite' : 'basemap_topo');
+        headerLabel.innerHTML = `${t('basemap_label')}: <b id="basemap-active-name">${t(modeKey)}</b>`;
+      }
+      const streetCard = container.querySelector('#btn-mode-street');
+      if (streetCard) {
+        streetCard.title = t('basemap_street_title');
+        const span = streetCard.querySelector('.basemap-card-name');
+        if (span) span.textContent = t('basemap_street');
+      }
+      const satCard = container.querySelector('#btn-mode-satellite');
+      if (satCard) {
+        satCard.title = t('basemap_satellite_title');
+        const span = satCard.querySelector('.basemap-card-name');
+        if (span) span.textContent = t('basemap_satellite');
+      }
+      const topoCard = container.querySelector('#btn-mode-topo');
+      if (topoCard) {
+        topoCard.title = t('basemap_topo_title');
+        const span = topoCard.querySelector('.basemap-card-name');
+        if (span) span.textContent = t('basemap_topo');
+      }
+    }
+
+    function updateDemBadgeUI() {
+      const demBadgeEl = container.querySelector('#gmaps-dem-badge');
+      if (!demBadgeEl) return;
+      const titleSpan = demBadgeEl.querySelector('.dem-badge-title');
+      if (titleSpan) titleSpan.textContent = t('dem_title');
+      const elevB = demBadgeEl.querySelector('.dem-badge-elev');
+      if (elevB && (elevB.textContent === 'เลื่อนเมาส์บนแผนที่' || elevB.textContent === 'Hover over map')) {
+        elevB.textContent = t('dem_hover');
+      }
+      const unitSpan = demBadgeEl.querySelector('.dem-badge-unit');
+      if (unitSpan && (unitSpan.textContent === 'เพื่อวัดระดับความสูงดิน' || unitSpan.textContent === 'to measure ground elevation')) {
+        unitSpan.textContent = t('dem_unit');
+      }
+    }
+
+    function updateDisclaimerUI() {
+      const disc = container.querySelector('#gmaps-disclaimer-pill');
+      if (!disc) return;
+      disc.title = t('disclaimer_title');
+      const textSpan = disc.querySelector('.disclaimer-text');
+      if (textSpan) textSpan.textContent = t('disclaimer_text');
+    }
+
+    window.addEventListener('thaiflood:language-changed', () => {
+      updateBasemapLabel(null, activeBasemap);
+      updateBasemapSwitcherCards();
+      updateDemBadgeUI();
+      updateDisclaimerUI();
+      updateWindLegendUI();
+      updateBottomLegendBar();
+
+      try {
+        if (typeof updateDamMarkers === 'function') {
+          updateDamMarkers();
+        } else if (activeLegendLayers.has('dams') && typeof renderDamLayers === 'function') {
+          renderDamLayers();
+        }
+      } catch (err) {
+        console.warn('Error refreshing dam markers on language change:', err);
+      }
+
+      try {
+        if (typeof updateDOHHighwayMarkers === 'function') {
+          updateDOHHighwayMarkers();
+        }
+      } catch (err) {
+        console.warn('Error refreshing DOH highway markers on language change:', err);
+      }
+
+      try {
+        if (typeof updateTraffyFloodMarkers === 'function') {
+          updateTraffyFloodMarkers();
+        }
+      } catch (err) {
+        console.warn('Error refreshing Traffy flood markers on language change:', err);
+      }
+
+      try {
+        if (typeof updateCctvMarkers === 'function') {
+          updateCctvMarkers();
+        }
+      } catch (err) {
+        console.warn('Error refreshing CCTV markers on language change:', err);
+      }
+
+      try {
+        if (typeof renderFlowDirectionArrows === 'function') {
+          renderFlowDirectionArrows();
+        }
+      } catch (err) {
+        console.warn('Error refreshing flow direction arrows on language change:', err);
+      }
+
+      if (userLocationMarker) {
+        const uEl = userLocationMarker.getElement();
+        if (uEl) {
+          uEl.title = getLanguage() === 'en' ? 'Your current location' : 'ตำแหน่งปัจจุบันของคุณ (คลิกดูสถานะน้ำรอบตัว)';
+        }
+      }
+    });
+
+    // Initial update for basemap, dem badge, and disclaimer UI
+    updateBasemapSwitcherCards();
+    updateDemBadgeUI();
+    updateDisclaimerUI();
 
     const btn3d = container.querySelector('#gmaps-btn-3d');
     let is3DPitched = false;
@@ -811,9 +1084,11 @@ export function createMapViewer(options) {
       updateBasemapLabel(basemapNames[mode] || mode, mode);
 
       if (mapInstance.getLayer('osm-base-layer')) {
+        mapInstance.setPaintProperty('osm-base-layer', 'raster-opacity', 1);
         mapInstance.setLayoutProperty('osm-base-layer', 'visibility', mode === 'street' ? 'visible' : 'none');
       }
       if (mapInstance.getLayer('esri-satellite-layer')) {
+        mapInstance.setPaintProperty('esri-satellite-layer', 'raster-opacity', 1);
         mapInstance.setLayoutProperty('esri-satellite-layer', 'visibility', mode === 'satellite' ? 'visible' : 'none');
       }
       if (mapInstance.getLayer('opentopo-contour-layer')) {
@@ -1050,11 +1325,15 @@ export function createMapViewer(options) {
       try {
         const weather = await fetchCurrentProvinceWeather(nearest.name, nearest.lat, nearest.lng);
         if (weather && provEl && tempEl && iconEl && descEl) {
-          provEl.textContent = weather.province;
+          currentProvinceWeatherData = weather;
+          const isEn = getLanguage() === 'en';
+          provEl.textContent = isEn ? (weather.provinceEn || weather.province) : weather.province;
           tempEl.textContent = `${weather.temp}°`;
           iconEl.textContent = weather.icon || '🌤️';
-          descEl.textContent = weather.weatherDesc || '';
-          weatherPill.title = `จ.${weather.province}: ${weather.temp}°C (${weather.weatherDesc}) - คลิกดูพยากรณ์ฝน 7 วัน`;
+          descEl.textContent = isEn ? (weather.weatherDescEn || weather.weatherDesc || '') : (weather.weatherDesc || '');
+          weatherPill.title = isEn
+            ? `${weather.provinceEn || weather.province}: ${weather.temp}°C (${weather.weatherDescEn || weather.weatherDesc}) - Click for 7-day forecast`
+            : `จ.${weather.province}: ${weather.temp}°C (${weather.weatherDesc}) - คลิกดูพยากรณ์ฝน 7 วัน`;
         }
       } catch (err) {
         console.warn('Weather pill update err:', err);
@@ -1082,6 +1361,9 @@ export function createMapViewer(options) {
         }
         if (isTraffyFloodVisible) {
           updateTraffyFloodMarkers();
+        }
+        if (isCctvVisible) {
+          updateCctvMarkers();
         }
       }
     }
@@ -1132,7 +1414,6 @@ export function createMapViewer(options) {
       renderStationMarkers();
       renderFlowDirectionArrows();
       renderDOHHighwayFloodLines();
-      initTraffyFloodLayer();
       initTrafficLayer();
       initNWPForecastLayers();
       refreshRadarTiles();
@@ -1159,7 +1440,7 @@ export function createMapViewer(options) {
         if (toggleBtn) {
           const toggleBtnText = toggleBtn.querySelector('.toggle-btn-text');
           const toggleBtnArrow = toggleBtn.querySelector('.toggle-btn-arrow');
-          if (toggleBtnText) toggleBtnText.textContent = 'แสดง';
+          if (toggleBtnText) toggleBtnText.textContent = t('layer_menu_show');
           if (toggleBtnArrow) toggleBtnArrow.textContent = '▴';
         }
       }
@@ -1200,7 +1481,11 @@ export function createMapViewer(options) {
       window.dispatchEvent(new CustomEvent('thaiflood:close-place-sheet'));
       if (windFieldLayer && windFieldLayer.isVisible()) {
         const w = windFieldLayer.getWindAtPoint(e.lngLat.lat, e.lngLat.lng);
-        showToast(`💨 ลมผิวพื้น 10 ม.: ${w.speedKmh} กม./ชม. (${w.speedMps} m/s) · ทิศ${w.directionText} (${w.directionDegrees}°) · Beaufort ${w.beaufort}`, '💨');
+        const isEn = getLanguage() === 'en';
+        const windPrefix = t('toast_wind_point_prefix');
+        const speedStr = formatUnit(w.speedKmh, 'kmh');
+        const dirLabel = isEn ? (w.directionTextEn || w.directionText) : `ทิศ${w.directionText}`;
+        showToast(`${windPrefix} ${speedStr} (${w.speedMps} m/s) · ${dirLabel} (${w.directionDegrees}°) · Beaufort ${w.beaufort}`, '💨');
       }
     });
 
@@ -1218,6 +1503,9 @@ export function createMapViewer(options) {
       }
       if (isTraffyFloodVisible) {
         updateTraffyFloodMarkers();
+      }
+      if (isCctvVisible) {
+        updateCctvMarkers();
       }
     });
     mapInstance.on('moveend', () => {
@@ -1237,7 +1525,7 @@ export function createMapViewer(options) {
     window.addEventListener('thaiflood:reset-north', () => {
       if (mapInstance) {
         mapInstance.rotateTo(0, { duration: 400 });
-        showToast('ปรับแผนที่ระนาบทิศเหนือ (North-up)', '🧭');
+        showToast(t('toast_north_reset'), '🧭');
       }
     });
   }
@@ -1359,6 +1647,24 @@ export function createMapViewer(options) {
     });
 
     // 4. GFS Precipitation Model Layer (NOAA NCEP)
+    const initialGfsRaster = generateContinuousWeatherRaster(cachedNWPData, currentGFSDay, 'gfs');
+    mapInstance.addSource('thai-gfs-raster', {
+      type: 'image',
+      url: initialGfsRaster?.url || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+      coordinates: NWP_RASTER_BOUNDS
+    });
+
+    mapInstance.addLayer({
+      id: 'layer-gfs-raster',
+      type: 'raster',
+      source: 'thai-gfs-raster',
+      layout: { visibility: 'none' },
+      paint: {
+        'raster-opacity': 0.83,
+        'raster-fade-duration': 0
+      }
+    });
+
     mapInstance.addSource('thai-gfs', {
       type: 'geojson',
       data: buildGFSGeoJSON(cachedNWPData, currentGFSDay)
@@ -1370,18 +1676,8 @@ export function createMapViewer(options) {
       source: 'thai-gfs',
       layout: { visibility: 'none' },
       paint: {
-        'fill-color': [
-          'interpolate',
-          ['linear'],
-          ['get', 'rainMm'],
-          0, 'rgba(0, 0, 0, 0)',
-          1, 'rgba(96, 165, 250, 0.45)',
-          10, 'rgba(16, 185, 129, 0.58)',
-          25, 'rgba(245, 158, 11, 0.68)',
-          50, 'rgba(239, 68, 68, 0.78)',
-          90, 'rgba(139, 92, 246, 0.88)'
-        ],
-        'fill-opacity': 0.75
+        'fill-color': 'rgba(0, 0, 0, 0)',
+        'fill-opacity': 0
       }
     });
 
@@ -1393,11 +1689,29 @@ export function createMapViewer(options) {
       paint: {
         'line-color': '#0284c7',
         'line-width': 1.5,
-        'line-opacity': 0.6
+        'line-opacity': 0
       }
     });
 
     // 5. ECMWF Precipitation Model Layer (Adjustable Days)
+    const initialEcmwfRaster = generateContinuousWeatherRaster(cachedNWPData, currentECMWFDay, 'ecmwf');
+    mapInstance.addSource('thai-ecmwf-raster', {
+      type: 'image',
+      url: initialEcmwfRaster?.url || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+      coordinates: NWP_RASTER_BOUNDS
+    });
+
+    mapInstance.addLayer({
+      id: 'layer-ecmwf-raster',
+      type: 'raster',
+      source: 'thai-ecmwf-raster',
+      layout: { visibility: 'none' },
+      paint: {
+        'raster-opacity': 0.83,
+        'raster-fade-duration': 0
+      }
+    });
+
     mapInstance.addSource('thai-ecmwf', {
       type: 'geojson',
       data: buildECMWFGeoJSON(cachedNWPData, currentECMWFDay)
@@ -1409,18 +1723,8 @@ export function createMapViewer(options) {
       source: 'thai-ecmwf',
       layout: { visibility: 'none' },
       paint: {
-        'fill-color': [
-          'interpolate',
-          ['linear'],
-          ['get', 'rainMm'],
-          0, 'rgba(0, 0, 0, 0)',
-          1, 'rgba(96, 165, 250, 0.45)',
-          10, 'rgba(16, 185, 129, 0.58)',
-          25, 'rgba(245, 158, 11, 0.68)',
-          50, 'rgba(239, 68, 68, 0.78)',
-          90, 'rgba(139, 92, 246, 0.88)'
-        ],
-        'fill-opacity': 0.75
+        'fill-color': 'rgba(0, 0, 0, 0)',
+        'fill-opacity': 0
       }
     });
 
@@ -1432,7 +1736,7 @@ export function createMapViewer(options) {
       paint: {
         'line-color': '#4f46e5',
         'line-width': 1.5,
-        'line-opacity': 0.7
+        'line-opacity': 0
       }
     });
 
@@ -1463,6 +1767,41 @@ export function createMapViewer(options) {
           lat: e.lngLat.lat,
           lng: e.lngLat.lng
         });
+      }
+    });
+
+    // General click handler for continuous meteorological raster layers
+    mapInstance.on('click', (e) => {
+      const ecmwfOn = mapInstance.getLayer('layer-ecmwf-raster') && mapInstance.getLayoutProperty('layer-ecmwf-raster', 'visibility') === 'visible';
+      const gfsOn = mapInstance.getLayer('layer-gfs-raster') && mapInstance.getLayoutProperty('layer-gfs-raster', 'visibility') === 'visible';
+      if ((ecmwfOn || gfsOn) && cachedNWPData && options.onStationSelect) {
+        const clickedPins = mapInstance.queryRenderedFeatures(e.point, {
+          layers: ['station-circle', 'thai-doh-highway-points', 'dam-circle', 'cctv-points'].filter((l) => mapInstance.getLayer(l))
+        });
+        if (clickedPins && clickedPins.length > 0) return;
+
+        const modelType = ecmwfOn ? 'ecmwf' : 'gfs';
+        const day = ecmwfOn ? currentECMWFDay : currentGFSDay;
+        const spot = getNWPValueAtCoordinate(cachedNWPData, e.lngLat.lat, e.lngLat.lng, day, modelType);
+        if (spot) {
+          const isEn = getLanguage() === 'en';
+          const mName = modelType === 'ecmwf' ? (isEn ? '🇪🇺 ECMWF IFS (9km)' : '🇪🇺 โมเดล ECMWF IFS (9 กม.)') : (isEn ? '🇺🇸 GFS NOAA (13km)' : '🇺🇸 โมเดล GFS NOAA (13 กม.)');
+          const locName = isEn ? spot.closestNodeNameEn : spot.closestNodeName;
+          const regName = isEn ? spot.regionEn : spot.region;
+          const dateText = isEn ? (spot.displayDateEn || spot.displayDate) : spot.displayDate;
+          const rainLabel = isEn ? 'Precipitation' : 'ปริมาณฝนสะสม';
+          const probLabel = isEn ? 'Rain Probability' : 'โอกาสเกิดฝน';
+          const windLabel = isEn ? 'Surface Wind' : 'ลมผิวพื้น';
+
+          options.onStationSelect({
+            isNWP: true,
+            name: `${mName}: ${locName}`,
+            desc: `${rainLabel}: ${spot.rainMm} mm (${probLabel} ${spot.rainProb}% · ${spot.severity.label}) · ${windLabel} ${spot.windSpeedKmh} km/h`,
+            riskTag: `${regName} · ${dateText}`,
+            lat: e.lngLat.lat,
+            lng: e.lngLat.lng
+          });
+        }
       }
     });
   }
@@ -1620,82 +1959,22 @@ export function createMapViewer(options) {
     });
   }
 
-  function renderDamLayers() {
-    if (!damsData || damsData.length === 0) return;
-    const { damPoints, reservoirPolygons } = buildDamGeoJSON(damsData);
-
-    // 1. Reservoir Water Bodies
-    mapInstance.addSource('thai-reservoirs', {
-      type: 'geojson',
-      data: reservoirPolygons
-    });
-
-    mapInstance.addLayer({
-      id: 'layer-reservoirs-fill',
-      type: 'fill',
-      source: 'thai-reservoirs',
-      layout: {
-        visibility: 'visible'
-      },
-      paint: {
-        'fill-color': '#0284c7',
-        'fill-opacity': 0.65
-      }
-    });
-
-    mapInstance.addLayer({
-      id: 'layer-reservoirs-stroke',
-      type: 'line',
-      source: 'thai-reservoirs',
-      layout: {
-        visibility: 'visible'
-      },
-      paint: {
-        'line-color': '#0369a1',
-        'line-width': 2
-      }
-    });
-
-    // 2. Dam Barrier Markers (Requirement 1: Use only small pin, no duplicate big icon)
-    mapInstance.addSource('thai-dams', {
-      type: 'geojson',
-      data: damPoints
-    });
-
-    if (!mapInstance.hasImage('dam-barrier-icon')) {
-      mapInstance.addImage('dam-barrier-icon', createDamIconCanvas());
-    }
-
-    // Symbol layer kept for test-suite compatibility but hidden so only the crisp DOM pin is shown
-    mapInstance.addLayer({
-      id: 'layer-dams-symbol',
-      type: 'symbol',
-      source: 'thai-dams',
-      layout: {
-        'icon-image': 'dam-barrier-icon',
-        'icon-size': [
-          'interpolate', ['linear'], ['zoom'],
-          5, 0.5,
-          8, 0.75,
-          12, 1.05
-        ],
-        'icon-allow-overlap': true,
-        'icon-ignore-placement': true,
-        'visibility': 'none'
-      }
-    });
-
-    // Create DOM HTML Dam Markers: Small crisp pin with dynamic water situation color
+  function updateDamMarkers() {
     damMarkers.forEach((m) => m.remove());
     damMarkers.length = 0;
 
+    const isEn = getLanguage() === 'en';
     damsData.forEach((dam) => {
       const st = getDamStatusInfo(dam);
       const isMedium = !!dam.isMediumReservoir;
+      const damName = localizeName(dam) || dam.shortName || dam.name;
+      const provName = localizeProvince(dam) || dam.province;
       const el = document.createElement('div');
       el.className = `gmaps-dam-marker-pin status-${st.level} ${isMedium ? 'is-medium-reservoir' : 'is-major-dam'}`;
       el.setAttribute('data-id', dam.id);
-      el.title = `${dam.name} (${dam.province}) - ความจุน้ำ ${dam.percentStorage}% [สถานะ: ${st.label}]`;
+      el.title = isEn 
+        ? `${damName} (${provName}) - Storage ${dam.percentStorage}% [${st.label}]`
+        : `${damName} (${provName}) - ความจุน้ำ ${dam.percentStorage}% [สถานะ: ${st.label}]`;
 
       if (isMedium) {
         // Minimalist Medium Reservoir Symbol: 20px circle with water wave glyph
@@ -1706,7 +1985,7 @@ export function createMapViewer(options) {
               <path d="M5.5 9.5C7.5 8.2 9.5 8.2 11 9.5C12.5 10.8 14.5 10.8 16.5 9.5" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"/>
               <path d="M5.5 13C7.5 11.7 9.5 11.7 11 13C12.5 14.3 14.5 14.3 16.5 13" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"/>
             </svg>
-            <span class="dam-pin-name" style="border: 1px solid ${st.badgeBorder}; color: ${st.nameColor}; background: rgba(255, 255, 255, 0.95);">${dam.shortName || dam.name}</span>
+            <span class="dam-pin-name" style="border: 1px solid ${st.badgeBorder}; color: ${st.nameColor}; background: rgba(255, 255, 255, 0.95);">${damName}</span>
           </div>
         `;
       } else {
@@ -1720,7 +1999,7 @@ export function createMapViewer(options) {
               <line x1="13" y1="10" x2="13" y2="17.5" stroke="${st.color}" stroke-width="1.6"/>
               <line x1="16" y1="10" x2="16" y2="17.5" stroke="${st.color}" stroke-width="1.6"/>
             </svg>
-            <span class="dam-pin-name" style="border: 1px solid ${st.badgeBorder}; color: ${st.nameColor}; background: rgba(255, 255, 255, 0.95);">${dam.shortName || dam.name}</span>
+            <span class="dam-pin-name" style="border: 1px solid ${st.badgeBorder}; color: ${st.nameColor}; background: rgba(255, 255, 255, 0.95);">${damName}</span>
           </div>
         `;
       }
@@ -1738,22 +2017,100 @@ export function createMapViewer(options) {
       damMarkers.push(marker);
     });
 
-    activeLegendLayers.add('dams');
     updateDamZoomGating();
+  }
 
-    mapInstance.on('click', 'layer-reservoirs-fill', (e) => {
-      const p = e.features[0].properties;
-      const dam = damsData.find((d) => String(d.id) === String(p.id)) || p;
-      if (onStationSelect) onStationSelect({ ...dam, isDam: true });
-      showDamPopup(dam, e.lngLat);
-    });
+  function renderDamLayers() {
+    if (!damsData || damsData.length === 0) return;
+    const { damPoints, reservoirPolygons } = buildDamGeoJSON(damsData);
 
-    mapInstance.on('mouseenter', 'layer-reservoirs-fill', () => {
-      mapInstance.getCanvas().style.cursor = 'pointer';
-    });
-    mapInstance.on('mouseleave', 'layer-reservoirs-fill', () => {
-      mapInstance.getCanvas().style.cursor = '';
-    });
+    // 1. Reservoir Water Bodies
+    if (!mapInstance.getSource('thai-reservoirs')) {
+      mapInstance.addSource('thai-reservoirs', {
+        type: 'geojson',
+        data: reservoirPolygons
+      });
+
+      mapInstance.addLayer({
+        id: 'layer-reservoirs-fill',
+        type: 'fill',
+        source: 'thai-reservoirs',
+        layout: {
+          visibility: 'visible'
+        },
+        paint: {
+          'fill-color': '#0284c7',
+          'fill-opacity': 0.65
+        }
+      });
+
+      mapInstance.addLayer({
+        id: 'layer-reservoirs-stroke',
+        type: 'line',
+        source: 'thai-reservoirs',
+        layout: {
+          visibility: 'visible'
+        },
+        paint: {
+          'line-color': '#0369a1',
+          'line-width': 2
+        }
+      });
+
+      mapInstance.on('click', 'layer-reservoirs-fill', (e) => {
+        const p = e.features[0].properties;
+        const dam = damsData.find((d) => String(d.id) === String(p.id)) || p;
+        if (onStationSelect) onStationSelect({ ...dam, isDam: true });
+        showDamPopup(dam, e.lngLat);
+      });
+
+      mapInstance.on('mouseenter', 'layer-reservoirs-fill', () => {
+        mapInstance.getCanvas().style.cursor = 'pointer';
+      });
+      mapInstance.on('mouseleave', 'layer-reservoirs-fill', () => {
+        mapInstance.getCanvas().style.cursor = '';
+      });
+    } else {
+      mapInstance.getSource('thai-reservoirs').setData(reservoirPolygons);
+    }
+
+    // 2. Dam Barrier Markers (Requirement 1: Use only small pin, no duplicate big icon)
+    if (!mapInstance.getSource('thai-dams')) {
+      mapInstance.addSource('thai-dams', {
+        type: 'geojson',
+        data: damPoints
+      });
+
+      if (!mapInstance.hasImage('dam-barrier-icon')) {
+        mapInstance.addImage('dam-barrier-icon', createDamIconCanvas());
+      }
+
+      // Symbol layer kept for test-suite compatibility but hidden so only the crisp DOM pin is shown
+      mapInstance.addLayer({
+        id: 'layer-dams-symbol',
+        type: 'symbol',
+        source: 'thai-dams',
+        layout: {
+          'icon-image': 'dam-barrier-icon',
+          'icon-size': [
+            'interpolate', ['linear'], ['zoom'],
+            5, 0.5,
+            8, 0.75,
+            12, 1.05
+          ],
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true,
+          'visibility': 'none'
+        }
+      });
+    } else {
+      mapInstance.getSource('thai-dams').setData(damPoints);
+    }
+
+    // Create DOM HTML Dam Markers: Small crisp pin with dynamic water situation color
+    updateDamMarkers();
+
+    activeLegendLayers.add('dams');
     updateBottomLegendBar();
   }
 
@@ -2035,183 +2392,104 @@ export function createMapViewer(options) {
     ecmwf: {
       id: 'ecmwf',
       name: 'ECMWF IFS (พยากรณ์ฝน 7 วัน)',
+      nameEn: 'ECMWF IFS (7-Day Rain Forecast)',
       shortName: '🇪🇺 ECMWF IFS',
+      shortNameEn: '🇪🇺 ECMWF IFS',
       icon: '🇪🇺',
       hasDaySelector: true,
       modelCode: 'ECMWF',
       colorScale: {
         type: 'gradient',
-        gradient: 'linear-gradient(to right, #f8fafc 0%, #a7f3d0 20%, #34d399 40%, #38bdf8 60%, #818cf8 80%, #f43f5e 100%)',
-        labels: ['0', '10', '20', '35', '50+ มม.']
+        gradient: 'linear-gradient(to right, rgba(255,255,255,0.2) 0%, #38bdf8 15%, #10b981 35%, #eab308 60%, #f97316 80%, #ef4444 95%, #7c3aed 100%)',
+        labels: ['0', '10', '35', '90', '90+ มม.'],
+        labelsEn: ['0', '10', '35', '90', '90+ mm']
       },
-      description: 'แบบจำลอง European Centre for Medium-Range Weather Forecasts (ECMWF IFS 9km) มาตรฐานความแม่นยำสูงสุดระดับโลก วิเคราะห์หย่อมความกดอากาศต่ำและแนวฝนสะสมล่วงหน้ารายวัน'
+      description: 'แบบจำลอง European Centre for Medium-Range Weather Forecasts (ECMWF IFS 9km) มาตรฐานความแม่นยำสูงสุดระดับโลก วิเคราะห์หย่อมความกดอากาศต่ำและแนวฝนสะสมล่วงหน้ารายวัน',
+      descriptionEn: 'European Centre for Medium-Range Weather Forecasts (ECMWF IFS 9km) gold-standard model for forward accumulated precipitation.'
     },
     gfs: {
       id: 'gfs',
       name: 'GFS NOAA (พยากรณ์ฝน 7 วัน)',
+      nameEn: 'GFS NOAA (7-Day Rain Forecast)',
       shortName: '🇺🇸 GFS NOAA',
+      shortNameEn: '🇺🇸 GFS NOAA',
       icon: '🇺🇸',
       hasDaySelector: true,
       modelCode: 'GFS',
       colorScale: {
         type: 'gradient',
-        gradient: 'linear-gradient(to right, #f8fafc 0%, #a7f3d0 20%, #34d399 40%, #38bdf8 60%, #818cf8 80%, #f43f5e 100%)',
-        labels: ['0', '10', '20', '35', '50+ มม.']
+        gradient: 'linear-gradient(to right, rgba(255,255,255,0.2) 0%, #38bdf8 15%, #10b981 35%, #eab308 60%, #f97316 80%, #ef4444 95%, #7c3aed 100%)',
+        labels: ['0', '10', '35', '90', '90+ มม.'],
+        labelsEn: ['0', '10', '35', '90', '90+ mm']
       },
-      description: 'แบบจำลอง Global Forecast System (NOAA/NCEP) ความละเอียด 13 กม. คำนวณแนวโน้มปริมาณน้ำฝนสะสมล่วงหน้า 7 วัน'
+      description: 'แบบจำลอง Global Forecast System (NOAA/NCEP) ความละเอียด 13 กม. คำนวณแนวโน้มปริมาณน้ำฝนสะสมล่วงหน้า 7 วัน',
+      descriptionEn: 'Global Forecast System (NOAA/NCEP) 13km resolution, calculates 7-day accumulated rainfall outlook.'
     },
     'sat-water': {
       id: 'sat-water',
       name: 'เรดาร์ตรวจวัดน้ำฝน (Doppler Radar)',
+      nameEn: 'Precipitation Radar (Doppler Radar)',
       shortName: '📡 เรดาร์ Doppler',
+      shortNameEn: '📡 Doppler Radar',
       icon: '📡',
       hasDaySelector: false,
       colorScale: {
         type: 'gradient',
         gradient: 'linear-gradient(to right, #00ecec, #01a0f6, #0000f6, #00eb00, #00c800, #009000, #ffff00, #e7c000, #ff9000, #ff0000, #d60000, #c00000, #ff00f0, #9600b4)',
-        labels: ['10 (เบา)', '30 (ปานกลาง)', '45 (หนัก)', '60+ dBZ (รุนแรง)']
+        labels: ['10 (เบา)', '30 (ปานกลาง)', '45 (หนัก)', '60+ dBZ (รุนแรง)'],
+        labelsEn: ['10 (Light)', '30 (Moderate)', '45 (Heavy)', '60+ dBZ (Severe)']
       },
-      description: 'เรดาร์ Doppler ตรวจจับหยดน้ำฝนจริงที่ตกสู่พื้นดินทุก 10 นาที เชื่อมต่อเครือข่ายสถานีเรดาร์ กรมอุตุนิยมวิทยา (TMD)'
+      description: 'เรดาร์ Doppler ตรวจจับหยดน้ำฝนจริงที่ตกสู่พื้นดินทุก 10 นาที เชื่อมต่อเครือข่ายสถานีเรดาร์ กรมอุตุนิยมวิทยา (TMD)',
+      descriptionEn: 'Doppler precipitation radar detecting real raindrops falling to ground every 10 min from TMD radar stations.'
     },
     'sat-clouds': {
       id: 'sat-clouds',
       name: 'ภาพดาวเทียมกลุ่มเมฆ (Himawari-9 Clean IR)',
+      nameEn: 'Satellite Cloud Imagery (Himawari-9 Clean IR)',
       shortName: '🛰️ ดาวเทียมเมฆ',
+      shortNameEn: '🛰️ Satellite Clouds',
       icon: '🛰️',
       hasDaySelector: false,
       colorScale: {
         type: 'gradient',
         gradient: 'linear-gradient(to right, #4575b4, #74add1, #abd9e9, #ffffbf, #fee090, #fdae61, #f46d43, #d73027)',
-        labels: ['เมฆชั้นต่ำ', 'เมฆชั้นกลาง', 'ยอดเมฆสูง', 'พายุฝนฟ้าคะนอง']
+        labels: ['เมฆชั้นต่ำ', 'เมฆชั้นกลาง', 'ยอดเมฆสูง', 'พายุฝนฟ้าคะนอง'],
+        labelsEn: ['Low Cloud', 'Mid Cloud', 'High Cloud Tops', 'Thunderstorm']
       },
-      description: 'ภาพถ่ายดาวเทียมอุตุนิยมวิทยา Himawari-9 Clean IR ตรวจจับอุณหภูมิยอดเมฆเพื่อระบุกลุ่มเมฆฝนฟ้าคะนองรุนแรง อัปเดตทุก 10 นาที ผ่าน NASA GIBS'
+      description: 'ภาพถ่ายดาวเทียมอุตุนิยมวิทยา Himawari-9 Clean IR ตรวจจับอุณหภูมิยอดเมฆเพื่อระบุกลุ่มเมฆฝนฟ้าคะนองรุนแรง อัปเดตทุก 10 นาที ผ่าน NASA GIBS',
+      descriptionEn: 'Himawari-9 Clean IR satellite imagery tracking cloud top temperatures for severe thunderstorm identification via NASA GIBS.'
     },
     'wind-field': {
       id: 'wind-field',
       name: 'กระแสลมผิวพื้น 10 เมตร (WMO Scale)',
+      nameEn: '10m Surface Wind Vectors (WMO Scale)',
       shortName: '💨 กระแสลม 10ม.',
+      shortNameEn: '💨 Surface Wind 10m',
       icon: '💨',
       hasDaySelector: false,
       colorScale: {
         type: 'gradient',
         gradient: 'linear-gradient(to right, #38bdf8, #34d399, #a3e635, #facc15, #fb923c, #f43f5e, #c084fc)',
-        labels: ['0 (ลมอ่อน)', '5 m/s (18 km/h)', '12 m/s', '24+ m/s (พายุ)']
+        labels: ['0 (ลมอ่อน)', '5 m/s (18 km/h)', '12 m/s', '24+ m/s (พายุ)'],
+        labelsEn: ['0 (Calm)', '5 m/s (18 km/h)', '12 m/s', '24+ m/s (Gale)']
       },
-      description: 'แบบจำลองกระแสลมผิวพื้นระดับ 10 เมตรตามมาตราโบฟอร์ต (Beaufort Scale) คลิกบนแผนที่เพื่อดูความเร็วและทิศทางลมสด'
-    },
-    dams: {
-      id: 'dams',
-      name: 'สถานะปริมาตรน้ำในเขื่อน',
-      shortName: '💧 สถานะเขื่อน',
-      icon: '💧',
-      hasDaySelector: false,
-      colorScale: {
-        type: 'chips',
-        items: [
-          { color: '#dc2626', label: 'วิกฤต (≥80%)' },
-          { color: '#ea580c', label: 'เฝ้าระวัง (60-79%)' },
-          { color: '#0284c7', label: 'ปกติ (30-59%)' },
-          { color: '#d97706', label: 'น้ำน้อย (<30%)' }
-        ]
-      },
-      description: 'สีของสัญลักษณ์เขื่อนสะท้อนตาม % ปริมาตรน้ำกักเก็บจริงเทียบเกณฑ์ควบคุม (Rule Curve) จากกรมชลประทานและ กฟผ.'
-    },
-    'doh-roads': {
-      id: 'doh-roads',
-      name: 'น้ำท่วมทางหลวงทั่วประเทศ (DOH)',
-      shortName: '🛣️ ทางหลวงน้ำท่วม (DOH)',
-      icon: '🛣️',
-      hasDaySelector: false,
-      colorScale: {
-        type: 'chips',
-        items: [
-          { color: '#dc2626', label: 'ผ่านไม่ได้ (น้ำท่วมสูง)' },
-          { color: '#ea580c', label: 'ผ่านได้ด้วยความระมัดระวัง' }
-        ]
-      },
-      description: 'ข้อมูลกรมทางหลวง (DOH) รายงานจุดน้ำท่วมทางหลวงทั่วประเทศ พร้อมระดับน้ำ เส้นทางเลี่ยง และสายด่วน 1586 โทรฟรี 24 ชม.'
-    },
-    'bma-roads': {
-      id: 'bma-roads',
-      name: 'น้ำท่วมทางหลวงทั่วประเทศ (DOH)',
-      shortName: '🛣️ ทางหลวงน้ำท่วม',
-      icon: '🛣️',
-      hasDaySelector: false,
-      colorScale: {
-        type: 'chips',
-        items: [
-          { color: '#dc2626', label: 'ผ่านไม่ได้' },
-          { color: '#ea580c', label: 'ผ่านได้' }
-        ]
-      },
-      description: 'ข้อมูลกรมทางหลวง (DOH)'
-    },
-    'traffy-flood': {
-      id: 'traffy-flood',
-      name: 'น้ำท่วมขัง Traffy Fondue',
-      shortName: '🛣️ Traffy Fondue',
-      icon: '🛣️',
-      hasDaySelector: false,
-      colorScale: {
-        type: 'chips',
-        items: [
-          { color: '#f59e0b', label: 'รอรับเรื่อง / กำลังดำเนินการ' },
-          { color: '#10b981', label: 'แก้ไขแล้ว / น้ำลด' }
-        ]
-      },
-      description: 'รายงานจุดน้ำท่วมขังบนผิวถนนจากระบบ Traffy Fondue (สวทช. / กทม.) คลิกที่หมุดถนนเพื่อดูภาพถ่ายและรายละเอียดเหตุการณ์สด'
-    },
-    traffic: {
-      id: 'traffic',
-      name: 'สภาพการจราจรสด',
-      shortName: '🚦 การจราจร',
-      icon: '🚦',
-      hasDaySelector: false,
-      colorScale: {
-        type: 'chips',
-        items: [
-          { color: '#16a34a', label: 'คล่องตัว' },
-          { color: '#eab308', label: 'ชะลอตัว' },
-          { color: '#dc2626', label: 'ติดขัด' }
-        ]
-      },
-      description: 'สภาพการจราจรสดบนเส้นทางหลัก (แสดงผลอัตโนมัติเมื่อซูมระดับถนน Zoom 13 ขึ้นไป)'
-    },
-    'dmr-geology': {
-      id: 'dmr-geology',
-      name: 'ธรณีวิทยา (DMR 1:250k)',
-      shortName: '🪨 ธรณีวิทยา',
-      icon: '🪨',
-      hasDaySelector: false,
-      colorScale: {
-        type: 'chips',
-        items: [
-          { color: '#eab308', label: 'ตะกอนน้ำพา / หินร่วน' },
-          { color: '#dc2626', label: 'รอยเลื่อนมีพลัง' }
-        ]
-      },
-      description: 'แผนที่ธรณีวิทยาและหินฐาน กรมทรัพยากรธรณี คลิกบนแผนที่เพื่อดูชื่อหน่วยหิน สัญลักษณ์ และอายุทางธรณี'
+      description: 'แบบจำลองกระแสลมผิวพื้นระดับ 10 เมตรตามมาตราโบฟอร์ต (Beaufort Scale) คลิกบนแผนที่เพื่อดูความเร็วและทิศทางลมสด',
+      descriptionEn: '10m surface wind vectors following Beaufort / WMO standard scale. Click anywhere on map to inspect live speed and direction.'
     }
   };
 
   function updateBottomLegendBar() {
     const floatBar = container.querySelector('#gmaps-ecmwf-float-bar');
     if (!floatBar) return;
+    const isEn = getLanguage() === 'en';
 
-    // Check layer visibility directly from map and active state
+    // Check layer visibility directly from map and active state (Strictly 5 weather layers only)
     const isLayerOn = (lId) => {
-      if (lId === 'ecmwf') return !!(mapInstance && mapInstance.getLayer('layer-ecmwf-fill') && mapInstance.getLayoutProperty('layer-ecmwf-fill', 'visibility') === 'visible');
-      if (lId === 'gfs') return !!(mapInstance && mapInstance.getLayer('layer-gfs-fill') && mapInstance.getLayoutProperty('layer-gfs-fill', 'visibility') === 'visible');
+      if (lId === 'ecmwf') return !!(mapInstance && ((mapInstance.getLayer('layer-ecmwf-raster') && mapInstance.getLayoutProperty('layer-ecmwf-raster', 'visibility') === 'visible') || (mapInstance.getLayer('layer-ecmwf-fill') && mapInstance.getLayoutProperty('layer-ecmwf-fill', 'visibility') === 'visible')));
+      if (lId === 'gfs') return !!(mapInstance && ((mapInstance.getLayer('layer-gfs-raster') && mapInstance.getLayoutProperty('layer-gfs-raster', 'visibility') === 'visible') || (mapInstance.getLayer('layer-gfs-fill') && mapInstance.getLayoutProperty('layer-gfs-fill', 'visibility') === 'visible')));
       if (lId === 'sat-water') return !!(mapInstance && mapInstance.getLayer('nasa-water-satellite-layer') && mapInstance.getLayoutProperty('nasa-water-satellite-layer', 'visibility') === 'visible');
       if (lId === 'sat-clouds') return !!(mapInstance && mapInstance.getLayer('nasa-cloud-satellite-layer') && mapInstance.getLayoutProperty('nasa-cloud-satellite-layer', 'visibility') === 'visible');
       if (lId === 'wind-field') return !!(windFieldLayer && ((windFieldLayer.isVisible && windFieldLayer.isVisible()) || (windFieldLayer.canvas && windFieldLayer.canvas.style.display !== 'none')));
-      if (lId === 'traffic') return !!(mapInstance && mapInstance.getLayer('layer-traffic') && mapInstance.getLayoutProperty('layer-traffic', 'visibility') === 'visible');
-      if (lId === 'dmr-geology') return isGeologyActive();
-      if (lId === 'dams') return activeLegendLayers.has('dams');
-      if (lId === 'doh-roads' || lId === 'bma-roads') return activeLegendLayers.has('doh-roads');
-      if (lId === 'traffy-flood') return activeLegendLayers.has('traffy-flood');
-      if (lId === 'stations') return activeLegendLayers.has('stations');
-      if (lId === 'flow-direction') return activeLegendLayers.has('flow-direction');
       return false;
     };
 
@@ -2229,6 +2507,9 @@ export function createMapViewer(options) {
     }
 
     const conf = LAYER_LEGEND_CONFIGS[currentActiveLegendId] || LAYER_LEGEND_CONFIGS[validActive[0]];
+    const confName = isEn ? (conf.nameEn || conf.name) : conf.name;
+    const confDesc = isEn ? (conf.descriptionEn || conf.description) : conf.description;
+    const scaleLabels = (isEn && conf.colorScale.labelsEn) ? conf.colorScale.labelsEn : conf.colorScale.labels;
 
     // 1. Render tabs
     const tabsWrapper = floatBar.querySelector('#legend-tabs-wrapper');
@@ -2237,7 +2518,8 @@ export function createMapViewer(options) {
         tabsWrapper.innerHTML = validActive.map((lId) => {
           const c = LAYER_LEGEND_CONFIGS[lId];
           const isActive = lId === currentActiveLegendId;
-          return `<button class="legend-tab-btn ${isActive ? 'active' : ''}" data-layer-id="${lId}" type="button">${c.shortName || c.name}</button>`;
+          const label = isEn ? (c.shortNameEn || c.shortName || c.nameEn) : (c.shortName || c.name);
+          return `<button class="legend-tab-btn ${isActive ? 'active' : ''}" data-layer-id="${lId}" type="button">${label}</button>`;
         }).join('');
         tabsWrapper.querySelectorAll('.legend-tab-btn').forEach((btn) => {
           btn.addEventListener('click', () => {
@@ -2246,7 +2528,7 @@ export function createMapViewer(options) {
           });
         });
       } else {
-        tabsWrapper.innerHTML = `<div class="legend-single-title">${conf.icon} <b>${conf.name}</b></div>`;
+        tabsWrapper.innerHTML = `<div class="legend-single-title">${conf.icon} <b>${confName}</b></div>`;
       }
     }
 
@@ -2259,7 +2541,12 @@ export function createMapViewer(options) {
         daySection.removeAttribute('hidden');
         const activeDay = conf.modelCode === 'GFS' ? currentGFSDay : currentECMWFDay;
         const f = cachedNWPData && cachedNWPData[0]?.dailyForecasts[activeDay];
-        const dateStr = f ? `${f.displayDate} (${f.dayLabel})` : 'วันนี้';
+        let dateStr = isEn ? 'Today' : 'วันนี้';
+        if (f) {
+          const disp = isEn ? (f.displayDateEn || f.displayDate) : f.displayDate;
+          const dLbl = isEn ? (f.dayLabelEn || f.dayLabel) : f.dayLabel;
+          dateStr = `${disp} (${dLbl})`;
+        }
 
         const titleEl = floatBar.querySelector('#ecmwf-float-title');
         if (titleEl) {
@@ -2274,6 +2561,7 @@ export function createMapViewer(options) {
         daySection.querySelectorAll('.float-chip').forEach((c) => {
           const d = parseInt(c.getAttribute('data-day'), 10);
           c.classList.toggle('active', d === activeDay);
+          c.textContent = d === 0 ? (isEn ? 'Today' : 'วันนี้') : (isEn ? `+${d}d` : `+${d} วัน`);
         });
       } else {
         daySection.style.display = 'none';
@@ -2290,7 +2578,7 @@ export function createMapViewer(options) {
           <div class="legend-scale-bar-wrap">
             <div class="legend-scale-gradient" style="background: ${conf.colorScale.gradient};"></div>
             <div class="legend-scale-labels">
-              ${conf.colorScale.labels.map((lbl) => `<span>${lbl}</span>`).join('')}
+              ${scaleLabels.map((lbl) => `<span>${lbl}</span>`).join('')}
             </div>
           </div>
         `;
@@ -2311,12 +2599,60 @@ export function createMapViewer(options) {
     // 4. Description section
     const descText = floatBar.querySelector('#bottom-legend-desc-text');
     if (descText) {
-      descText.textContent = conf.description;
+      descText.textContent = confDesc;
+    }
+
+    const toggleDescBtn = floatBar.querySelector('#btn-toggle-legend-desc');
+    if (toggleDescBtn) {
+      const toggleDescText = toggleDescBtn.querySelector('.desc-toggle-text');
+      if (toggleDescText) toggleDescText.textContent = isEn ? 'Description' : 'คำอธิบาย';
+      toggleDescBtn.title = isEn ? 'Collapse or expand description' : 'ย่อหรือขยายคำอธิบาย';
     }
   }
 
   function updateNWPFloatBar() {
     updateBottomLegendBar();
+  }
+
+  function updateNWPRasters() {
+    if (!cachedNWPData || !mapInstance) return;
+
+    // 1. ECMWF Continuous Raster
+    try {
+      const ecmwfRaster = generateContinuousWeatherRaster(cachedNWPData, currentECMWFDay, 'ecmwf');
+      if (ecmwfRaster && ecmwfRaster.url) {
+        const src = mapInstance.getSource('thai-ecmwf-raster');
+        if (src && typeof src.updateImage === 'function') {
+          src.updateImage({ url: ecmwfRaster.url, coordinates: NWP_RASTER_BOUNDS });
+        }
+      }
+    } catch (e) {
+      console.warn('ECMWF raster update:', e.message);
+    }
+
+    // 2. GFS Continuous Raster
+    try {
+      const gfsRaster = generateContinuousWeatherRaster(cachedNWPData, currentGFSDay, 'gfs');
+      if (gfsRaster && gfsRaster.url) {
+        const src = mapInstance.getSource('thai-gfs-raster');
+        if (src && typeof src.updateImage === 'function') {
+          src.updateImage({ url: gfsRaster.url, coordinates: NWP_RASTER_BOUNDS });
+        }
+      }
+    } catch (e) {
+      console.warn('GFS raster update:', e.message);
+    }
+
+    // 3. Connect live NWP data to WindFieldLayer particles!
+    if (windFieldLayer && typeof windFieldLayer.setLiveWindData === 'function') {
+      windFieldLayer.setLiveWindData(cachedNWPData);
+    }
+
+    // 4. Update 7-Day Flood Risk corridors using live ECMWF cumulative rainfall!
+    if (stationsData && allRiverBasins && mapInstance.getSource('thai-forecast-polygons')) {
+      const updated7d = compute7DayRiskPolygons(stationsData, allRiverBasins, cachedNWPData);
+      mapInstance.getSource('thai-forecast-polygons').setData(updated7d);
+    }
   }
 
   async function initNWPForecastLayers() {
@@ -2334,6 +2670,7 @@ export function createMapViewer(options) {
         mapInstance.getSource('thai-ecmwf').setData(ecmwfGeo);
       }
 
+      updateNWPRasters();
       updateNWPFloatBar();
     } catch (err) {
       console.warn('initNWPForecastLayers error:', err);
@@ -2342,9 +2679,18 @@ export function createMapViewer(options) {
 
   function setGFSDay(dayIndex) {
     currentGFSDay = Math.max(0, Math.min(6, dayIndex));
-    if (cachedNWPData && mapInstance && mapInstance.getSource('thai-gfs')) {
-      const gfsGeo = buildGFSGeoJSON(cachedNWPData, currentGFSDay);
-      mapInstance.getSource('thai-gfs').setData(gfsGeo);
+    if (cachedNWPData && mapInstance) {
+      if (mapInstance.getSource('thai-gfs')) {
+        const gfsGeo = buildGFSGeoJSON(cachedNWPData, currentGFSDay);
+        mapInstance.getSource('thai-gfs').setData(gfsGeo);
+      }
+      try {
+        const gfsRaster = generateContinuousWeatherRaster(cachedNWPData, currentGFSDay, 'gfs');
+        const src = mapInstance.getSource('thai-gfs-raster');
+        if (src && gfsRaster?.url && typeof src.updateImage === 'function') {
+          src.updateImage({ url: gfsRaster.url, coordinates: NWP_RASTER_BOUNDS });
+        }
+      } catch {}
     }
     updateNWPFloatBar();
 
@@ -2356,9 +2702,18 @@ export function createMapViewer(options) {
 
   function setECMWFDay(dayIndex) {
     currentECMWFDay = Math.max(0, Math.min(6, dayIndex));
-    if (cachedNWPData && mapInstance && mapInstance.getSource('thai-ecmwf')) {
-      const ecmwfGeo = buildECMWFGeoJSON(cachedNWPData, currentECMWFDay);
-      mapInstance.getSource('thai-ecmwf').setData(ecmwfGeo);
+    if (cachedNWPData && mapInstance) {
+      if (mapInstance.getSource('thai-ecmwf')) {
+        const ecmwfGeo = buildECMWFGeoJSON(cachedNWPData, currentECMWFDay);
+        mapInstance.getSource('thai-ecmwf').setData(ecmwfGeo);
+      }
+      try {
+        const ecmwfRaster = generateContinuousWeatherRaster(cachedNWPData, currentECMWFDay, 'ecmwf');
+        const src = mapInstance.getSource('thai-ecmwf-raster');
+        if (src && ecmwfRaster?.url && typeof src.updateImage === 'function') {
+          src.updateImage({ url: ecmwfRaster.url, coordinates: NWP_RASTER_BOUNDS });
+        }
+      } catch {}
     }
     updateNWPFloatBar();
 
@@ -2370,8 +2725,8 @@ export function createMapViewer(options) {
   }
 
   function setNWPForecastDay(dayIndex) {
-    const gfsOn = mapInstance && mapInstance.getLayer('layer-gfs-fill') && mapInstance.getLayoutProperty('layer-gfs-fill', 'visibility') === 'visible';
-    const ecmwfOn = mapInstance && mapInstance.getLayer('layer-ecmwf-fill') && mapInstance.getLayoutProperty('layer-ecmwf-fill', 'visibility') === 'visible';
+    const gfsOn = mapInstance && ((mapInstance.getLayer('layer-gfs-raster') && mapInstance.getLayoutProperty('layer-gfs-raster', 'visibility') === 'visible') || (mapInstance.getLayer('layer-gfs-fill') && mapInstance.getLayoutProperty('layer-gfs-fill', 'visibility') === 'visible'));
+    const ecmwfOn = mapInstance && ((mapInstance.getLayer('layer-ecmwf-raster') && mapInstance.getLayoutProperty('layer-ecmwf-raster', 'visibility') === 'visible') || (mapInstance.getLayer('layer-ecmwf-fill') && mapInstance.getLayoutProperty('layer-ecmwf-fill', 'visibility') === 'visible'));
     if (gfsOn) setGFSDay(dayIndex);
     if (ecmwfOn) setECMWFDay(dayIndex);
     if (!gfsOn && !ecmwfOn) {
@@ -2408,23 +2763,27 @@ export function createMapViewer(options) {
 
       try {
         const rock = await identifyRockUnit(lat, lng, bounds, { width: canvas.width, height: canvas.height });
+        const isEn = getLanguage() === 'en';
         if (options.onStationSelect) {
           options.onStationSelect({
             isGeneric: true,
-            title: rock ? `หน่วยหิน ${rock.name} (${rock.symbol})` : 'ข้อมูลธรณีวิทยา (DMR)',
-            category: 'ธรณีวิทยาและหินฐาน (DMR 1:250k)',
+            isGeology: true,
+            title: rock 
+              ? (isEn ? `Rock Unit ${rock.name} (${rock.symbol})` : `หน่วยหิน ${rock.name} (${rock.symbol})`)
+              : (isEn ? 'DMR Geology (1:250k)' : 'ข้อมูลธรณีวิทยา (DMR 1:250k)'),
+            category: isEn ? 'Bedrock & Geology (DMR 1:250k)' : 'ธรณีวิทยาและหินฐาน (DMR 1:250k)',
             icon: '🪨',
             lat,
             lng,
             details: rock ? [
-              { label: 'สัญลักษณ์หน่วยหิน', value: rock.symbol },
-              { label: 'ชื่อหน่วยหิน', value: rock.name },
-              { label: 'ยุคทางธรณี', value: rock.age },
-              { label: 'ลักษณะหิน', value: rock.desc },
-              { label: 'แหล่งข้อมูล', value: 'กรมทรัพยากรธรณี (DMR 1:250k)' }
+              { label: 'สัญลักษณ์หน่วยหิน', labelEn: 'Rock Symbol', value: rock.symbol },
+              { label: 'ชื่อหน่วยหิน', labelEn: 'Rock Unit Name', value: rock.name },
+              { label: 'ยุคทางธรณี', labelEn: 'Geological Age', value: rock.age },
+              { label: 'ลักษณะหิน', labelEn: 'Lithology / Description', value: rock.desc },
+              { label: 'แหล่งข้อมูล', labelEn: 'Data Source', value: isEn ? 'Department of Mineral Resources (DMR 1:250k)' : 'กรมทรัพยากรธรณี (DMR 1:250k)' }
             ] : [
-              { label: 'สถานะ', value: 'ไม่พบข้อมูลหน่วยหินบนบกในพิกัดนี้' },
-              { label: 'แหล่งข้อมูล', value: 'กรมทรัพยากรธรณี (DMR)' }
+              { label: 'สถานะ', labelEn: 'Status', value: isEn ? 'No onshore rock unit mapped at this coordinate' : 'ไม่พบข้อมูลหน่วยหินบนบกในพิกัดนี้' },
+              { label: 'แหล่งข้อมูล', labelEn: 'Data Source', value: isEn ? 'Department of Mineral Resources (DMR)' : 'กรมทรัพยากรธรณี (DMR)' }
             ]
           });
         }
@@ -2551,6 +2910,22 @@ export function createMapViewer(options) {
     }
   }
 
+  function selectCctvItem(p, lat, lng) {
+    if (currentStationPopup) {
+      currentStationPopup.remove();
+      currentStationPopup = null;
+    }
+    if (options.onStationSelect) {
+      options.onStationSelect({
+        ...p,
+        isCctv: true,
+        lat,
+        lng,
+        agency: p.agency || 'DOH'
+      });
+    }
+  }
+
   function handleClusterExpansionZoom(cluster, type) {
     if (!mapInstance || !cluster) return;
     clearActiveSpiderfy();
@@ -2592,6 +2967,8 @@ export function createMapViewer(options) {
       const coords = it.coords || centerCoords;
       if (type === 'doh') {
         selectDOHItem(p, coords[1], coords[0]);
+      } else if (type === 'cctv') {
+        selectCctvItem(p, coords[1], coords[0]);
       } else {
         selectTraffyItem(p, coords[1], coords[0]);
       }
@@ -2656,6 +3033,19 @@ export function createMapViewer(options) {
           clearActiveSpiderfy();
           selectDOHItem(p, lat, lng);
         });
+      } else if (type === 'cctv') {
+        node.className = 'spiderfy-node cctv-spiderfy-pin';
+        node.innerHTML = `
+          <div class="cctv-pin-inner">
+            <span class="cctv-pin-icon">📹</span>
+            <span class="cctv-agency-badge">${p.agency || 'CCTV'}</span>
+          </div>
+        `;
+        node.addEventListener('click', (e) => {
+          e.stopPropagation();
+          clearActiveSpiderfy();
+          selectCctvItem(p, lat, lng);
+        });
       } else {
         node.className = `spiderfy-node traffy-road-marker-pin ${p.stateClass || 'status-warning'}`;
         node.innerHTML = `
@@ -2692,13 +3082,15 @@ export function createMapViewer(options) {
     const zoom = mapInstance ? mapInstance.getZoom() : 7.5;
     const clusteredOrPins = clusterPointsByZoom(currentDohFloodedFeatures, zoom, 'doh');
 
+    const isEn = getLanguage() === 'en';
     clusteredOrPins.forEach((entry) => {
       if (entry.isCluster) {
+        const clusterName = entry.level === 'region' ? localizeRegion(entry.name) : localizeProvince(entry.name);
         const el = document.createElement('div');
         el.className = `doh-cluster-pin ${entry.dohColor.dominantClass}`;
         el.setAttribute('data-level', entry.level);
         el.setAttribute('data-name', entry.name);
-        el.title = `[กรมทางหลวง] ${entry.title} - คลิกเพื่อขยายดูพื้นที่`;
+        el.title = isEn ? `[DOH Highway] ${clusterName} - Click to zoom` : `[กรมทางหลวง] ${entry.title || clusterName} - คลิกเพื่อขยายดูพื้นที่`;
 
         el.innerHTML = `
           <div class="doh-cluster-icon-wrap ${entry.dohColor.dominantClass}">
@@ -2712,8 +3104,7 @@ export function createMapViewer(options) {
             <span class="doh-cluster-count-badge ${entry.dohColor.dominantClass}">${entry.count}</span>
           </div>
           <div class="doh-cluster-label-tag ${entry.dohColor.dominantClass}">
-            <span class="doh-cluster-name">${entry.name}</span>
-            <span class="doh-cluster-qty">${entry.count} จุด</span>
+            <span class="doh-cluster-name">${clusterName}</span>
           </div>
         `;
 
@@ -2734,12 +3125,12 @@ export function createMapViewer(options) {
         const el = document.createElement('div');
         el.className = 'doh-highway-marker-pin';
         el.setAttribute('data-id', p.id);
-        el.title = `[กรมทางหลวง] ${p.highwayNo} (${p.routeName}) กม. ${p.kmRange} - ${p.statusLabel}`;
+        el.title = isEn ? `[DOH] Route ${p.highwayNo} (${p.routeName}) KM ${p.kmRange}` : `[กรมทางหลวง] ${p.highwayNo} (${p.routeName}) กม. ${p.kmRange} - ${p.statusLabel}`;
 
         const isPassable = !!p.passable;
         const passColor = isPassable ? '#ea580c' : '#dc2626';
         const cardClass = isPassable ? 'passable' : 'impassable';
-        const depthText = p.waterDepthCm ? `${p.waterDepthCm} ซม.` : '';
+        const depthText = p.waterDepthCm ? formatUnit(p.waterDepthCm, 'cm') : '';
         const routeDisplay = p.highwayNo ? String(p.highwayNo).trim() : '';
 
         el.innerHTML = `
@@ -2901,7 +3292,7 @@ export function createMapViewer(options) {
   // =========================================================================
   const traffyFloodMarkers = [];
   let traffyFloodGeoJSON = null;
-  let isTraffyFloodVisible = true;
+  let isTraffyFloodVisible = false;
 
   function showTraffyPopup(p, lngLat) {
     if (currentStationPopup) {
@@ -2962,13 +3353,16 @@ export function createMapViewer(options) {
     const zoom = mapInstance ? mapInstance.getZoom() : 7.5;
     const clusteredOrPins = clusterPointsByZoom(traffyFloodGeoJSON.features, zoom, 'traffy');
 
+    const isEn = getLanguage() === 'en';
     clusteredOrPins.forEach((entry) => {
       if (entry.isCluster) {
+        const clusterName = entry.level === 'region' ? localizeRegion(entry.name) : localizeProvince(entry.name);
+        const unitReports = isEn ? 'reports' : 'เรื่อง';
         const el = document.createElement('div');
         el.className = 'traffy-cluster-pin';
         el.setAttribute('data-level', entry.level);
         el.setAttribute('data-name', entry.name);
-        el.title = `[Traffy Fondue] ${entry.title} - คลิกเพื่อขยายดูพื้นที่`;
+        el.title = isEn ? `[Traffy Fondue] ${clusterName} - Click to zoom` : `[Traffy Fondue] ${entry.title || clusterName} - คลิกเพื่อขยายดูพื้นที่`;
 
         el.innerHTML = `
           <div class="traffy-cluster-icon-wrap">
@@ -2976,8 +3370,8 @@ export function createMapViewer(options) {
             <span class="traffy-cluster-count-badge">${entry.count}</span>
           </div>
           <div class="traffy-cluster-label-tag">
-            <span class="traffy-cluster-name">${entry.name}</span>
-            <span class="traffy-cluster-qty">${entry.count} เรื่อง</span>
+            <span class="traffy-cluster-name">${clusterName}</span>
+            <span class="traffy-cluster-qty">${entry.count} ${unitReports}</span>
           </div>
         `;
 
@@ -3064,6 +3458,118 @@ export function createMapViewer(options) {
     updateBottomLegendBar();
   }
 
+  // =========================================================================
+  // Live CCTV Cameras Layer (DOH, BMA DDS, RID Authentic Streams)
+  // =========================================================================
+  const cctvMarkers = [];
+  let cctvGeoJSON = null;
+  let isCctvVisible = false;
+
+  async function initCctvLayer() {
+    try {
+      const geo = await getCctvGeoJSON();
+      cctvGeoJSON = geo;
+      if (isCctvVisible && geo && Array.isArray(geo.features)) {
+        updateCctvMarkers();
+      }
+    } catch (err) {
+      console.error('Failed to load CCTV data:', err);
+    }
+  }
+
+  function updateCctvMarkers() {
+    cctvMarkers.forEach((m) => m.remove());
+    cctvMarkers.length = 0;
+
+    if (!isCctvVisible || !cctvGeoJSON || !Array.isArray(cctvGeoJSON.features)) {
+      return;
+    }
+
+    const zoom = mapInstance ? mapInstance.getZoom() : 7.5;
+    const clusteredOrPins = clusterPointsByZoom(cctvGeoJSON.features, zoom, 'cctv');
+
+    const isEn = getLanguage() === 'en';
+    clusteredOrPins.forEach((entry) => {
+      if (entry.isCluster) {
+        const clusterName = entry.level === 'region' ? localizeRegion(entry.name) : localizeProvince(entry.name);
+        const el = document.createElement('div');
+        el.className = 'cctv-cluster-pin';
+        el.setAttribute('data-level', entry.level);
+        el.setAttribute('data-name', entry.name);
+        el.title = isEn ? `[CCTV Camera] ${clusterName} - Click to zoom` : `[กล้อง CCTV] ${entry.title || clusterName} - คลิกเพื่อขยายดูพื้นที่`;
+
+        el.innerHTML = `
+          <div class="cctv-cluster-icon-wrap">
+            <svg class="cctv-camera-svg" viewBox="0 0 24 24" width="26" height="26" fill="none">
+              <circle cx="12" cy="12" r="10.5" fill="#0284c7" stroke="#ffffff" stroke-width="2"/>
+              <path d="M6.5 9.5C6.5 8.67 7.17 8 8 8H14C14.83 8 15.5 8.67 15.5 9.5V14.5C15.5 15.33 14.83 16 14 16H8C7.17 16 6.5 15.33 6.5 14.5V9.5Z" fill="#ffffff"/>
+              <path d="M15.5 11L19 9V15L15.5 13V11Z" fill="#ffffff"/>
+            </svg>
+            <span class="cctv-cluster-count-badge">${entry.count}</span>
+          </div>
+          <div class="cctv-cluster-label-tag">
+            <span class="cctv-cluster-name">${clusterName}</span>
+          </div>
+        `;
+
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          handleClusterExpansionZoom(entry, 'cctv');
+        });
+
+        const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+          .setLngLat(entry.center)
+          .addTo(mapInstance);
+
+        cctvMarkers.push(marker);
+      } else {
+        const p = entry.properties;
+        const [lng, lat] = entry.coords;
+
+        const el = document.createElement('div');
+        el.className = 'cctv-highway-marker-pin';
+        el.setAttribute('data-cctv-id', p.id);
+        el.title = `[CCTV ${p.agency || ''}] ${p.name || p.road || ''} - คลิกดูภาพสด`;
+
+        const isLive = p.status !== 'offline';
+        const agencyLabel = p.agencyCode || (p.agency ? p.agency.slice(0, 4) : 'CCTV');
+
+        el.innerHTML = `
+          <div class="cctv-minimal-pin ${isLive ? 'online' : 'offline'}">
+            <div class="cctv-minimal-icon-wrap">
+              <svg class="cctv-camera-svg" viewBox="0 0 24 24" width="22" height="22" fill="none">
+                <circle cx="12" cy="12" r="10.5" fill="#0284c7" stroke="#ffffff" stroke-width="2"/>
+                <path d="M7 10C7 9.45 7.45 9 8 9H13.5C14.05 9 14.5 9.45 14.5 10V14C14.5 14.55 14.05 15 13.5 15H8C7.45 15 7 14.55 7 14V10Z" fill="#ffffff"/>
+                <path d="M14.5 11.2L17.5 9.5V14.5L14.5 12.8V11.2Z" fill="#ffffff"/>
+              </svg>
+              <span class="cctv-minimal-live-dot ${isLive ? 'online' : 'offline'}"></span>
+              ${entry.hasOverlap ? `<span class="cctv-overlap-indicator">+${entry.overlappingGroup.length}</span>` : ''}
+            </div>
+            <div class="cctv-minimal-tag">
+              <span class="cctv-route-label">${agencyLabel}</span>
+            </div>
+          </div>
+        `;
+
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (entry.hasOverlap) {
+            spiderfyOverlappingPins(entry.overlappingGroup, entry.coords, 'cctv');
+          } else {
+            clearActiveSpiderfy();
+            selectCctvItem(p, lat, lng);
+          }
+        });
+
+        const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+          .setLngLat([lng, lat])
+          .addTo(mapInstance);
+
+        cctvMarkers.push(marker);
+      }
+    });
+  }
+
   function setLayerVisibility(layerId, isVisible) {
     if (!mapInstance) return;
     const vis = isVisible ? 'visible' : 'none';
@@ -3088,7 +3594,7 @@ export function createMapViewer(options) {
         m.getElement().style.display = isVisible ? 'flex' : 'none';
       });
       if (isVisible) {
-        showToast('เปิดเลเยอร์เวกเตอร์ทิศทางการไหลของน้ำ (Flow Vectors)', '🌊');
+        showToast(t('toast_layer_flow'), '🌊');
         activeLegendLayers.add('flow-direction');
       } else {
         activeLegendLayers.delete('flow-direction');
@@ -3119,7 +3625,7 @@ export function createMapViewer(options) {
           if (mapInstance.getZoom() < 13) {
             mapInstance.flyTo({ zoom: 13.2, speed: 1.2 });
           }
-          showToast('เปิดชั้นข้อมูลสภาพการจราจรสด (Google Traffic)', '🚦');
+          showToast(t('toast_layer_traffic'), '🚦');
         }
       }
       updateBottomLegendBar();
@@ -3136,7 +3642,7 @@ export function createMapViewer(options) {
       if (mapInstance.getLayer('layer-stations-circle')) mapInstance.setLayoutProperty('layer-stations-circle', 'visibility', vis);
       if (mapInstance.getLayer('layer-stations-inner')) mapInstance.setLayoutProperty('layer-stations-inner', 'visibility', vis);
       if (isVisible) {
-        showToast('เปิดเลเยอร์สถานีวัดระดับน้ำโทรมาตร (สสน.)', '📍');
+        showToast(t('toast_layer_stations'), '📍');
       }
       updateBottomLegendBar();
     } else if (layerId === 'sat-water') {
@@ -3161,19 +3667,34 @@ export function createMapViewer(options) {
       if (!cachedNWPData) {
         initNWPForecastLayers();
       }
+      if (mapInstance.getLayer('layer-gfs-raster')) mapInstance.setLayoutProperty('layer-gfs-raster', 'visibility', vis);
       if (mapInstance.getLayer('layer-gfs-fill')) mapInstance.setLayoutProperty('layer-gfs-fill', 'visibility', vis);
-      if (mapInstance.getLayer('layer-gfs-stroke')) mapInstance.setLayoutProperty('layer-gfs-stroke', 'visibility', vis);
+      if (mapInstance.getLayer('layer-gfs-stroke')) mapInstance.setLayoutProperty('layer-gfs-stroke', 'visibility', 'none');
       if (isVisible) activeLegendLayers.add('gfs'); else activeLegendLayers.delete('gfs');
       updateNWPFloatBar();
     } else if (layerId === 'ecmwf') {
       if (!cachedNWPData) {
         initNWPForecastLayers();
       }
+      if (mapInstance.getLayer('layer-ecmwf-raster')) mapInstance.setLayoutProperty('layer-ecmwf-raster', 'visibility', vis);
       if (mapInstance.getLayer('layer-ecmwf-fill')) mapInstance.setLayoutProperty('layer-ecmwf-fill', 'visibility', vis);
-      if (mapInstance.getLayer('layer-ecmwf-stroke')) mapInstance.setLayoutProperty('layer-ecmwf-stroke', 'visibility', vis);
+      if (mapInstance.getLayer('layer-ecmwf-stroke')) mapInstance.setLayoutProperty('layer-ecmwf-stroke', 'visibility', 'none');
       if (isVisible) activeLegendLayers.add('ecmwf'); else activeLegendLayers.delete('ecmwf');
       updateNWPFloatBar();
-    } else if (layerId === 'doh-roads' || layerId === 'bma-roads') {
+    } else if (layerId === 'cctv') {
+      isCctvVisible = isVisible;
+      if (isVisible) {
+        if (!cctvGeoJSON) {
+          initCctvLayer();
+        } else {
+          updateCctvMarkers();
+        }
+        showToast(t('toast_layer_cctv'), '📹');
+      } else {
+        cctvMarkers.forEach((m) => m.remove());
+        cctvMarkers.length = 0;
+      }
+    } else if (layerId === 'doh-roads') {
       if (isVisible) activeLegendLayers.add('doh-roads'); else activeLegendLayers.delete('doh-roads');
       if (!mapInstance.getLayer('layer-doh-roads-line')) {
         renderDOHHighwayFloodLines();
@@ -3183,7 +3704,7 @@ export function createMapViewer(options) {
       if (mapInstance.getLayer('layer-doh-roads-core')) mapInstance.setLayoutProperty('layer-doh-roads-core', 'visibility', 'none');
       if (isVisible) {
         updateDOHHighwayMarkers();
-        showToast('เปิดเลเยอร์น้ำท่วมทางหลวงทั่วประเทศ (กรมทางหลวง DOH สายด่วน 1586)', '🛣️');
+        showToast(t('toast_layer_doh'), '🛣️');
         const zoom = mapInstance.getZoom();
         const center = mapInstance.getCenter();
         if (zoom > 9.0 && (Math.abs(center.lat - 13.75) < 0.4 && Math.abs(center.lng - 100.5) < 0.4)) {
@@ -3199,7 +3720,7 @@ export function createMapViewer(options) {
       setTraffyFloodVisibility(isVisible);
       if (isVisible) {
         currentActiveLegendId = 'traffy-flood';
-        showToast('เปิดเลเยอร์น้ำท่วมขัง Traffy Fondue', '🛣️');
+        showToast(t('toast_layer_traffy'), '🛣️');
         const center = mapInstance.getCenter();
         const zoom = mapInstance.getZoom();
         if (zoom < 9.5 || Math.abs(center.lat - 13.75) > 1.2 || Math.abs(center.lng - 100.5) > 1.2) {
@@ -3212,13 +3733,16 @@ export function createMapViewer(options) {
         windFieldLayer = createWindFieldLayer(mapInstance);
       }
       if (windFieldLayer) {
+        if (cachedNWPData) {
+          windFieldLayer.setLiveWindData(cachedNWPData);
+        }
         windFieldLayer.setVisible(isVisible);
       }
       const legWind = container.querySelector('#gmaps-wind-legend');
       if (legWind) legWind.style.display = 'none';
       if (isVisible) {
         activeLegendLayers.add('wind-field');
-        showToast('เปิดเลเยอร์กระแสลมผิวพื้น 10 ม. (Wind Field Map)', '💨');
+        showToast(t('toast_layer_wind'), '💨');
       } else {
         activeLegendLayers.delete('wind-field');
       }
@@ -3283,7 +3807,7 @@ export function createMapViewer(options) {
       showDamPopup(item, [lng, lat]);
     } else if (item.isLocation) {
       showLocationPopup(item, [lng, lat]);
-    } else if (item.isTraffy || item.isRoad) {
+    } else if (item.isTraffy || item.isRoad || item.isCctv) {
       if (currentStationPopup) {
         currentStationPopup.remove();
         currentStationPopup = null;
@@ -3297,10 +3821,92 @@ export function createMapViewer(options) {
     element: container,
     locateMe: locateUser,
     flyToStation,
+    updateLiveTelemetry: ({ stationsData: newStations, damsData: newDams, dohRoadsData: newDohRoads, allRiverBasins }) => {
+      if (Array.isArray(newStations) && newStations.length > 0) {
+        stationsData = newStations;
+        if (allRiverBasins) {
+          try {
+            const newFlood = computeCurrentFloodPolygons(stationsData, allRiverBasins);
+            const new7d = compute7DayRiskPolygons(stationsData, allRiverBasins, cachedNWPData);
+            if (mapInstance && mapInstance.getSource('thai-flood-polygons')) {
+              mapInstance.getSource('thai-flood-polygons').setData(newFlood);
+            }
+            if (mapInstance && mapInstance.getSource('thai-forecast-polygons')) {
+              mapInstance.getSource('thai-forecast-polygons').setData(new7d);
+            }
+          } catch (e) {
+            console.warn('Flood polygon update non-fatal:', e);
+          }
+        }
+        if (mapInstance && mapInstance.getSource('thai-telemetry-stations')) {
+          const stationsGeoJSON = {
+            type: 'FeatureCollection',
+            features: stationsData.map((st) => ({
+              type: 'Feature',
+              id: st.id,
+              properties: {
+                id: st.id,
+                code: st.code,
+                name: st.name,
+                shortName: st.shortName,
+                province: st.province,
+                amphoe: st.amphoe,
+                river: st.river,
+                basin: st.basin,
+                currentLevel: st.currentLevel,
+                bankCapacity: st.bankCapacity,
+                hasBankInfo: st.hasBankInfo,
+                diff: st.diff,
+                diffText: st.diffText,
+                diffDisplay: st.diffDisplay,
+                status: st.status,
+                isOverflow: st.isOverflow,
+                flowRate: st.flowRate,
+                datetime: st.datetime,
+                agency: st.agency
+              },
+              geometry: {
+                type: 'Point',
+                coordinates: [st.lng, st.lat]
+              }
+            }))
+          };
+          mapInstance.getSource('thai-telemetry-stations').setData(stationsGeoJSON);
+        } else if (mapInstance && mapInstance.isStyleLoaded()) {
+          try {
+            renderStationMarkers();
+          } catch (e) {
+            console.warn('Render stations non-fatal:', e);
+          }
+        }
+      }
+
+      if (Array.isArray(newDams) && newDams.length > 0) {
+        damsData = newDams;
+        if (mapInstance && mapInstance.isStyleLoaded()) {
+          try {
+            renderDamLayers();
+          } catch (e) {
+            console.warn('Dam layer update non-fatal:', e);
+          }
+        }
+      }
+
+      if (newDohRoads && newDohRoads.features && newDohRoads.features.length > 0) {
+        dohFloodData = newDohRoads;
+        if (mapInstance && mapInstance.isStyleLoaded()) {
+          try {
+            renderDOHHighwayFloodLines();
+          } catch (e) {
+            console.warn('DOH road update non-fatal:', e);
+          }
+        }
+      }
+    },
     resetNorth: () => {
       if (mapInstance) {
         mapInstance.rotateTo(0, { duration: 400 });
-        showToast('ปรับแผนที่ระนาบทิศเหนือ (North-up)', '🧭');
+        showToast(t('toast_north_reset'), '🧭');
       }
     },
     getBearing: () => {
@@ -3309,11 +3915,131 @@ export function createMapViewer(options) {
     toggleLayer: (layerId, isVisible) => {
       setLayerVisibility(layerId, isVisible);
     },
+    setCctvVisibility: (visible) => {
+      setLayerVisibility('cctv', visible);
+    },
+    setTraffyFloodVisibility: (visible) => {
+      setTraffyFloodVisibility(visible);
+    },
     setECMWFDay: (dayIndex) => {
       setECMWFDay(dayIndex);
     },
     setGFSDay: (dayIndex) => {
       setGFSDay(dayIndex);
+    },
+    runSpacePOVZoomAnimation: (opts = {}) => {
+      const { onComplete, duration = 1800 } = opts;
+      let descentStarted = false;
+
+      const startDescent = () => {
+        if (descentStarted) return;
+        descentStarted = true;
+
+        if (!mapInstance) {
+          if (onComplete) onComplete();
+          return;
+        }
+
+        mapInstance.resize();
+
+        // Smooth flyTo descent from Orbit (zoom 1.6, pitch 52) to Bangkok metropolis (zoom 10.8, pitch 0)
+        mapInstance.flyTo({
+          center: [100.5018, 13.7563],
+          zoom: 10.8,
+          pitch: 0,
+          bearing: 0,
+          duration: duration,
+          curve: 1.42,
+          speed: 1.2,
+          easing: (t) => t * (2 - t)
+        });
+
+        // Crossfade Satellite to Street Basemap at T+2000ms over 500ms
+        setTimeout(() => {
+          const startTime = performance.now();
+          const fadeDuration = 500;
+          function fadeStep(now) {
+            const elapsed = now - startTime;
+            const progress = Math.max(0, Math.min(1, elapsed / fadeDuration));
+            try {
+              if (mapInstance && mapInstance.getLayer('osm-base-layer') && mapInstance.getLayer('esri-satellite-layer')) {
+                mapInstance.setPaintProperty('osm-base-layer', 'raster-opacity', progress);
+                mapInstance.setPaintProperty('esri-satellite-layer', 'raster-opacity', Math.max(0, Math.min(1, 1 - progress)));
+              }
+            } catch (err) {
+              console.warn('Basemap crossfade paint non-fatal error:', err);
+            }
+            if (progress < 1) {
+              requestAnimationFrame(fadeStep);
+            } else {
+              try {
+                if (mapInstance && mapInstance.getLayer('esri-satellite-layer')) {
+                  mapInstance.setLayoutProperty('esri-satellite-layer', 'visibility', 'none');
+                  mapInstance.setPaintProperty('esri-satellite-layer', 'raster-opacity', 1);
+                }
+                if (mapInstance && mapInstance.getLayer('osm-base-layer')) {
+                  mapInstance.setLayoutProperty('osm-base-layer', 'visibility', 'visible');
+                  mapInstance.setPaintProperty('osm-base-layer', 'raster-opacity', 1);
+                }
+              } catch (err) {
+                console.warn('Basemap crossfade finalize non-fatal error:', err);
+              }
+              activeBasemap = 'street';
+              updateBasemapDisplay('แผนที่', 'street');
+            }
+          }
+          requestAnimationFrame(fadeStep);
+        }, 2000);
+
+        // Complete callback at T+2800ms
+        setTimeout(() => {
+          if (mapInstance) {
+            mapInstance.resize();
+            requestAnimationFrame(() => mapInstance.resize());
+          }
+          if (onComplete) onComplete();
+        }, 2800);
+      };
+
+      if (!mapInstance) {
+        if (onComplete) onComplete();
+        return;
+      }
+
+      if (mapInstance.loaded() || mapInstance.isStyleLoaded()) {
+        startDescent();
+      } else {
+        mapInstance.once('style.load', startDescent);
+        mapInstance.once('load', startDescent);
+        setTimeout(() => {
+          if (!descentStarted && mapInstance) {
+            startDescent();
+          }
+        }, 120);
+      }
+    },
+    skipSpacePOVAnimation: (onComplete) => {
+      if (!mapInstance) {
+        if (onComplete) onComplete();
+        return;
+      }
+      mapInstance.jumpTo({
+        center: [100.5018, 13.7563],
+        zoom: 10.8,
+        pitch: 0,
+        bearing: 0
+      });
+      if (mapInstance.getLayer('osm-base-layer') && mapInstance.getLayer('esri-satellite-layer')) {
+        mapInstance.setLayoutProperty('osm-base-layer', 'visibility', 'visible');
+        mapInstance.setPaintProperty('osm-base-layer', 'raster-opacity', 1);
+        mapInstance.setLayoutProperty('esri-satellite-layer', 'visibility', 'none');
+        mapInstance.setPaintProperty('esri-satellite-layer', 'raster-opacity', 1);
+      }
+      activeBasemap = 'street';
+      updateBasemapDisplay('แผนที่', 'street');
+      mapInstance.resize();
+      requestAnimationFrame(() => mapInstance.resize());
+      if (onComplete) onComplete();
     }
   };
 }

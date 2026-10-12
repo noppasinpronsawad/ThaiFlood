@@ -1,15 +1,14 @@
 /**
  * Main Application Bootstrapper for ThaiFlood
- * 100% Real Live Government Data (ThaiWater HII & TMD NWP Supercomputer)
+ * 100% Real Live Government Data (ThaiWater HII, DOH Highway & TMD NWP Supercomputer)
  * Google Maps Inspired Experience (Port 3050)
  */
 import './index.css';
 import basinsData from './data/thailandBasins.json';
 import riverReachesData from './data/riverReaches.js';
-import { fetchLiveWaterStations } from './services/waterStationService.js';
-import { fetchLiveDams } from './services/damService.js';
-import { getDohHighwayGeoJSON } from './services/dohHighwayFloodService.js';
-import { fetchLiveBmaRoadFloodGeoJSON } from './services/bmaFloodRoadService.js';
+import { fetchLiveWaterStations, getCachedWaterStations } from './services/waterStationService.js';
+import { fetchLiveDams, getCachedDams } from './services/damService.js';
+import { getDohHighwayGeoJSON, getCachedDohHighwayGeoJSON } from './services/dohHighwayFloodService.js';
 import { computeCurrentFloodPolygons, compute7DayRiskPolygons } from './services/floodRiskService.js';
 
 import { createNavbar } from './components/Navbar.js';
@@ -29,35 +28,12 @@ async function initApp() {
   const appContainer = document.getElementById('app');
   if (!appContainer) return;
 
-  // Render initial loading skeleton
-  appContainer.innerHTML = `
-    <div id="live-data-loading" style="position: fixed; inset: 0; background: #ffffff; z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: var(--font-thai);">
-      <div style="font-size: 40px; margin-bottom: 12px; animation: gmaps-pulse 1.2s infinite ease-in-out;">🌊</div>
-      <div style="font-size: 16px; font-weight: 700; color: #1a73e8; margin-bottom: 6px;">กำลังเชื่อมต่อข้อมูลสดจากหน่วยงานภาครัฐ (สสน. / กรมทางหลวง / กทม.)</div>
-      <div style="font-size: 12.5px; color: #5f6368;">โหลดสถานีโทรมาตรน้ำ, เขื่อนหลัก, และจุดน้ำท่วมทางหลวงแบบ Real-Time...</div>
-    </div>
-  `;
-
   try {
-    // Fetch 100% real live telemetry data in parallel from official APIs
-    let stationsData = [];
-    let damsData = [];
-    let dohRoadsData = { type: 'FeatureCollection', features: [] };
-    let bmaRoadsData = { type: 'FeatureCollection', features: [] };
-    try {
-      const [stations, dams, dohRoads, bmaRoads] = await Promise.all([
-        fetchLiveWaterStations(),
-        fetchLiveDams(),
-        getDohHighwayGeoJSON(),
-        fetchLiveBmaRoadFloodGeoJSON()
-      ]);
-      stationsData = stations || [];
-      damsData = dams || [];
-      dohRoadsData = dohRoads || { type: 'FeatureCollection', features: [] };
-      bmaRoadsData = bmaRoads || { type: 'FeatureCollection', features: [] };
-    } catch (err) {
-      console.error('Failed to load live data:', err);
-    }
+    // 1. Instant Synchronous Cache Lookup (Stale-While-Revalidate)
+    // Ensures 0ms First Contentful Paint without waiting for slow government APIs
+    let stationsData = getCachedWaterStations() || [];
+    let damsData = getCachedDams() || [];
+    let dohRoadsData = getCachedDohHighwayGeoJSON() || { type: 'FeatureCollection', features: [] };
 
     // Combine major river basins with 500+ detailed river reaches for comprehensive snapping
     const allRiverBasins = {
@@ -65,12 +41,9 @@ async function initApp() {
       features: [...basinsData.features, ...riverReachesData.features]
     };
 
-    // Compute dynamic flood polygons and 7-day risks from real data (snapping to actual river reaches)
+    // Compute dynamic flood polygons and 7-day risks from initial data
     const floodNowData = computeCurrentFloodPolygons(stationsData, allRiverBasins);
     const forecast7dData = compute7DayRiskPolygons(stationsData, allRiverBasins);
-
-    // Clear loading screen
-    appContainer.innerHTML = '';
 
     let placeSheetInstance = null;
 
@@ -88,6 +61,8 @@ async function initApp() {
             placeSheetInstance.selectDam(item);
           } else if (item.isDohRoad) {
             placeSheetInstance.selectDohRoad(item);
+          } else if (item.isCctv) {
+            placeSheetInstance.selectCctv(item);
           } else if (item.isRoad) {
             placeSheetInstance.selectRoad(item);
           } else if (item.isTraffy) {
@@ -109,31 +84,24 @@ async function initApp() {
         }
       }
     });
-    appContainer.appendChild(mapViewer.element);
 
     // 2. Google Maps Left Place Sheet
     placeSheetInstance = createWaterStationList(stationsData, (item) => {
       mapViewer.flyToStation(item);
-    });
-    appContainer.appendChild(placeSheetInstance.element);
-
-    window.addEventListener('thaiflood:close-place-sheet', () => {
-      if (placeSheetInstance && placeSheetInstance.close) {
-        placeSheetInstance.close();
-      }
     });
 
     // 3. Google Maps Top-Left Search Bar & Filter Chips
     const topWidget = createNavbar({
       stations: stationsData,
       dams: damsData,
-      bmaRoads: bmaRoadsData,
       dohRoads: dohRoadsData,
       onSearchSelect: (item) => {
         mapViewer.flyToStation(item);
         if (placeSheetInstance) {
           if (item.isDam) {
             placeSheetInstance.selectDam(item);
+          } else if (item.isCctv) {
+            placeSheetInstance.selectCctv(item);
           } else if (item.isRoad) {
             placeSheetInstance.selectRoad(item);
           } else if (item.isTraffy) {
@@ -162,11 +130,141 @@ async function initApp() {
         if (mapViewer && mapViewer.resetNorth) {
           mapViewer.resetNorth();
         }
+      },
+      onNavigateToStatistics: () => {
+        navigateTo('/statistics');
       }
     });
-    appContainer.appendChild(topWidget);
 
-    console.log(`🗺️ ThaiFlood Live Portal loaded ${stationsData.length} live stations from ThaiWater (HII) & TMD.`);
+    // Container for Statistics View
+    const statsRoot = document.createElement('div');
+    statsRoot.id = 'tf-stats-view-root';
+    statsRoot.style.cssText = 'position:relative; width:100%; height:100%; display:none;';
+
+    let statsViewInstance = null;
+
+    async function showStatisticsView() {
+      if (mapViewer && mapViewer.element) mapViewer.element.style.display = 'none';
+      if (placeSheetInstance && placeSheetInstance.element) placeSheetInstance.element.style.display = 'none';
+      if (topWidget) topWidget.style.display = 'none';
+      statsRoot.style.display = 'block';
+
+      if (!statsViewInstance) {
+        const { createStatisticsView } = await import('./components/StatisticsView.js');
+        statsViewInstance = createStatisticsView({
+          onBackToMap: () => navigateTo('/')
+        });
+        statsRoot.appendChild(statsViewInstance);
+      }
+    }
+
+    function showMapView() {
+      statsRoot.style.display = 'none';
+      if (mapViewer && mapViewer.element) mapViewer.element.style.display = 'block';
+      if (placeSheetInstance && placeSheetInstance.element) placeSheetInstance.element.style.display = 'block';
+      if (topWidget) topWidget.style.display = 'block';
+      window.dispatchEvent(new Event('resize'));
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new Event('resize'));
+      });
+    }
+
+    function handleRoute() {
+      const path = window.location.pathname;
+      if (path === '/statistics' || path.startsWith('/statistics')) {
+        showStatisticsView();
+      } else {
+        showMapView();
+      }
+    }
+
+    function navigateTo(path) {
+      if (window.location.pathname !== path) {
+        window.history.pushState({}, '', path);
+      }
+      handleRoute();
+    }
+
+    window.addEventListener('popstate', handleRoute);
+
+    // Mount to DOM synchronously at T=0 (Instant Paint - No Blank White Screen)
+    appContainer.innerHTML = '';
+    appContainer.appendChild(mapViewer.element);
+    appContainer.appendChild(placeSheetInstance.element);
+    appContainer.appendChild(topWidget);
+    appContainer.appendChild(statsRoot);
+    handleRoute();
+
+    window.addEventListener('thaiflood:close-place-sheet', () => {
+      if (placeSheetInstance && placeSheetInstance.close) {
+        placeSheetInstance.close();
+      }
+    });
+
+    // Support direct CCTV sheet opening via custom event
+    window.addEventListener('thaiflood:open-cctv-sheet', (e) => {
+      if (placeSheetInstance && e.detail) {
+        placeSheetInstance.selectCctv(e.detail);
+      }
+    });
+
+    // Direct clean visibility of top navigation
+    topWidget.style.opacity = '1';
+    topWidget.style.transform = 'translateY(0)';
+
+    // Double map resize to ensure WebGL canvas is perfectly sized on initial display
+    window.scrollTo(0, 0);
+    window.dispatchEvent(new Event('resize'));
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new Event('resize'));
+    });
+
+    // Execute Space POV WebGL Zoom-In Descent Sequence without HUD (Smooth Camera FlyTo from Orbit to Thailand)
+    if (mapViewer && mapViewer.runSpacePOVZoomAnimation) {
+      mapViewer.runSpacePOVZoomAnimation({
+        duration: 2000,
+        onComplete: () => {
+          window.dispatchEvent(new Event('resize'));
+          requestAnimationFrame(() => {
+            window.dispatchEvent(new Event('resize'));
+          });
+        }
+      });
+    }
+
+    // 4. Fetch 100% real live telemetry data in parallel in the background (Stale-While-Revalidate)
+    Promise.all([
+      fetchLiveWaterStations(),
+      fetchLiveDams(),
+      getDohHighwayGeoJSON()
+    ]).then(([liveStations, liveDams, liveDohRoads]) => {
+      const freshStations = liveStations || [];
+      const freshDams = liveDams || [];
+      const freshDohRoads = liveDohRoads || { type: 'FeatureCollection', features: [] };
+
+      if (mapViewer && mapViewer.updateLiveTelemetry) {
+        mapViewer.updateLiveTelemetry({
+          stationsData: freshStations,
+          damsData: freshDams,
+          dohRoadsData: freshDohRoads,
+          allRiverBasins
+        });
+      }
+      if (placeSheetInstance && placeSheetInstance.updateStations && freshStations.length > 0) {
+        placeSheetInstance.updateStations(freshStations);
+      }
+      if (topWidget && topWidget.updateData) {
+        topWidget.updateData({
+          stations: freshStations,
+          dams: freshDams,
+          dohRoads: freshDohRoads
+        });
+      }
+      console.log(`🗺️ ThaiFlood Live Portal loaded ${freshStations.length} live stations from ThaiWater (HII) & TMD.`);
+    }).catch((bgErr) => {
+      console.warn('Background telemetry sync non-fatal:', bgErr);
+    });
+
   } catch (criticalErr) {
     console.error('Critical initialization error in ThaiFlood:', criticalErr);
     appContainer.innerHTML = `

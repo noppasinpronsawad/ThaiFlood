@@ -14,6 +14,7 @@ const KEY_LOCATIONS = {
 };
 
 import { fetchTMD7DayForecast } from './tmdWeatherService.js';
+import { THAI_PROVINCE_EN_MAP } from './i18nService.js';
 
 const forecastCache = new Map();
 const FORECAST_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
@@ -92,13 +93,13 @@ export function getAllLocations() {
 }
 
 function getWeatherDescription(code) {
-  if (code === 0) return { text: 'ท้องฟ้าแจ่มใส', icon: '☀️', severity: 'low' };
-  if (code <= 3) return { text: 'มีเมฆบางส่วน', icon: '⛅', severity: 'low' };
-  if (code <= 55) return { text: 'ฝนตกปรอยๆ', icon: '🌦️', severity: 'medium' };
-  if (code <= 65) return { text: 'ฝนตกปานกลาง', icon: '🌧️', severity: 'medium' };
-  if (code <= 75) return { text: 'ฝนตกหนัก', icon: '⛈️', severity: 'high' };
-  if (code <= 99) return { text: 'ฝนฟ้าคะนองรุนแรง', icon: '🌩️', severity: 'critical' };
-  return { text: 'มีเมฆมาก', icon: '☁️', severity: 'low' };
+  if (code === 0) return { text: 'ท้องฟ้าแจ่มใส', textEn: 'Clear Sky', icon: '☀️', severity: 'low' };
+  if (code <= 3) return { text: 'มีเมฆบางส่วน', textEn: 'Partly Cloudy', icon: '⛅', severity: 'low' };
+  if (code <= 55) return { text: 'ฝนตกปรอยๆ', textEn: 'Light Drizzle', icon: '🌦️', severity: 'medium' };
+  if (code <= 65) return { text: 'ฝนตกปานกลาง', textEn: 'Moderate Rain', icon: '🌧️', severity: 'medium' };
+  if (code <= 75) return { text: 'ฝนตกหนัก', textEn: 'Heavy Rain', icon: '⛈️', severity: 'high' };
+  if (code <= 99) return { text: 'ฝนฟ้าคะนองรุนแรง', textEn: 'Severe Thunderstorm', icon: '🌩️', severity: 'critical' };
+  return { text: 'มีเมฆมาก', textEn: 'Overcast', icon: '☁️', severity: 'low' };
 }
 
 function formatWeatherData(data, loc) {
@@ -111,17 +112,21 @@ function formatWeatherData(data, loc) {
     const weatherInfo = getWeatherDescription(code);
     const dateStr = times[i];
     let thaiDay = '';
+    let englishDay = '';
     try {
       const parts = String(dateStr).split('-');
       if (parts.length === 3) {
         const dateObj = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
         thaiDay = dateObj.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' });
+        englishDay = dateObj.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
       } else {
         const dateObj = new Date(dateStr);
         thaiDay = dateObj.toLocaleDateString('th-TH', { weekday: 'short', day: 'numeric', month: 'short' });
+        englishDay = dateObj.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric', month: 'short' });
       }
     } catch {
       thaiDay = dateStr || 'วันนี้';
+      englishDay = dateStr || 'Today';
     }
 
     const tMax = (daily.temperature_2m_max && typeof daily.temperature_2m_max[i] === 'number')
@@ -147,7 +152,9 @@ function formatWeatherData(data, loc) {
     days.push({
       date: dateStr,
       displayDate: thaiDay,
+      displayDateEn: englishDay,
       weatherDesc: weatherInfo.text,
+      weatherDescEn: weatherInfo.textEn,
       icon: weatherInfo.icon,
       severity: weatherInfo.severity,
       tempMax: tMax,
@@ -303,8 +310,10 @@ export async function fetchCurrentProvinceWeather(provinceName, lat = 13.7563, l
 
     const data = {
       province: provinceName,
+      provinceEn: THAI_PROVINCE_EN_MAP[provinceName] || provinceName,
       temp,
       weatherDesc: desc.text,
+      weatherDescEn: desc.textEn,
       icon: desc.icon,
       rainProb,
       humidity: Math.round(curr?.relative_humidity_2m ?? 70),

@@ -4,11 +4,33 @@
  * Covers 50+ major and medium dams across Thailand
  */
 import thailandReservoirs from '../data/thailandReservoirs.json' with { type: 'json' };
+import { fetchWithSmartSwitching } from './telemetrySwitchService.js';
 
 const DAM_CACHE_KEY = 'thaiflood_dams_cache_v1';
 const DAM_CACHE_TTL_MS = 15 * 60 * 1000; // 15 minutes cache
 
+export function getCachedDams() {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const cachedStr = localStorage.getItem(DAM_CACHE_KEY);
+      if (cachedStr) {
+        const cached = JSON.parse(cachedStr);
+        if (Array.isArray(cached.data) && cached.data.length > 0) {
+          return cached.data;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return null;
+}
+
 export async function fetchLiveDams() {
+  return await fetchWithSmartSwitching('dams', fetchLiveDamsDirect);
+}
+
+export async function fetchLiveDamsDirect() {
   // 1. Check client-side cache first
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
@@ -94,7 +116,7 @@ export function formatDamThaiDateTime(dateStr) {
       const day = d.getDate();
       const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
       const month = months[d.getMonth()];
-      const year = d.getFullYear() + 543;
+      const year = d.getFullYear(); // Strictly CE / ค.ศ.
       return `${day} ${month} ${year} 06:00 น.`;
     }
   } catch {}
@@ -149,11 +171,16 @@ function parseDamData(rawList) {
       id: String(damInfo.id || item.id),
       code: String(damInfo.dam_oldcode || damInfo.id),
       name: fullName,
+      name_en: damInfo.dam_name?.en || fullName,
       shortName: nameTh.replace(/^(เขื่อน|อ่างเก็บน้ำ)/, ''),
+      shortName_en: (damInfo.dam_name?.en || nameTh).replace(/^(เขื่อน|อ่างเก็บน้ำ)/, ''),
       province,
+      province_en: item.geocode?.province_name?.en || province,
       amphoe,
       basin,
+      basin_en: item.basin?.basin_name?.en || basin,
       agency: agency === 'ชป.' ? 'กรมชลประทาน' : (agency === 'กฟผ.' ? 'การไฟฟ้าฝ่ายผลิตฯ (EGAT)' : agency),
+      agency_en: item.agency?.agency_shortname?.en || item.agency?.agency_name?.en || agency,
       agencyShort: agency,
       lat,
       lng,
@@ -191,10 +218,15 @@ export function buildDamGeoJSON(dams) {
       properties: {
         id: d.id,
         name: d.name,
+        name_en: d.name_en || d.name,
         shortName: d.shortName,
+        shortName_en: d.shortName_en || d.shortName,
         province: d.province,
+        province_en: d.province_en || d.province,
         basin: d.basin,
+        basin_en: d.basin_en || d.basin,
         agency: d.agency,
+        agency_en: d.agency_en || d.agency,
         currentStorage: d.currentStorage,
         normalStorage: d.normalStorage,
         maxStorage: d.maxStorage,

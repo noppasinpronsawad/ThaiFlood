@@ -6,15 +6,38 @@
  */
 
 import dohRoadAlignments from '../data/dohRoadAlignments.json' with { type: 'json' };
+import { fetchWithSmartSwitching } from './telemetrySwitchService.js';
+import { THAI_PROVINCE_EN_MAP, formatDateTimeCE } from './i18nService.js';
 
 const DOH_CACHE_KEY = 'thaiflood_doh_live_cache_v4';
 const DOH_CACHE_TTL_MS = 10 * 60 * 1000; // 10 mins
 
+export function getCachedDohHighwayGeoJSON() {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const cached = localStorage.getItem(DOH_CACHE_KEY);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed.data && parsed.data.features) {
+          return parsed.data;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return null;
+}
+
 /**
- * Fetch real-time flood reports directly from DOH HDMS live API
+ * Fetch real-time flood reports directly from DOH HDMS live API or fresh bot cache
  * @returns {Promise<GeoJSON.FeatureCollection>}
  */
 export async function getDohHighwayGeoJSON() {
+  return await fetchWithSmartSwitching('doh-roads', getDohHighwayGeoJSONDirect);
+}
+
+export async function getDohHighwayGeoJSONDirect() {
   const now = new Date();
 
   // 1. Check local client cache
@@ -176,11 +199,13 @@ export async function getDohHighwayGeoJSON() {
           section: d.section_name ? `ช่วง${d.section_name}` : routeName,
           kmRange,
           province: d.province || 'ไม่ระบุ',
+          province_en: THAI_PROVINCE_EN_MAP[d.province] || d.province || 'N/A',
           amphoe: d.amphoe || '',
           tambon: d.tambon || '',
           waterDepthCm,
           passable,
           statusLabel: passable ? 'ผ่านได้ (รถเล็กโปรดระมัดระวัง)' : 'ปิดการจราจร / รถเล็กผ่านไม่ได้',
+          statusLabel_en: passable ? 'Passable (Small vehicles exercise caution)' : 'Closed / Impassable for small vehicles',
           severity: passable ? 'warning' : 'critical',
           cause: d.cause_of_accident || d.incident_type_text || 'น้ำท่วมขังบนผิวจราจร',
           detour: d.bypass_desc || d.initial_relief || 'เจ้าหน้าที่อำนวยความสะดวก โปรดตรวจสอบเส้นทางก่อนสัญจร',
@@ -188,7 +213,9 @@ export async function getDohHighwayGeoJSON() {
           endDate: d.end_date || null,
           endDateText: d.end_date_text || '',
           agency: d.depot_name ? `${d.depot_name} (${d.district_name || 'กรมทางหลวง'})` : 'กรมทางหลวง (DOH)',
-          hotline: 'สายด่วนกรมทางหลวง 1586 (โทรฟรีตลอด 24 ชม.)'
+          agency_en: 'Department of Highways (DOH)',
+          hotline: 'สายด่วนกรมทางหลวง 1586 (โทรฟรีตลอด 24 ชม.)',
+          hotline_en: 'DOH Hotline 1586 (Toll-Free 24h)'
         },
         geometry: {
           type: 'LineString',
@@ -202,7 +229,7 @@ export async function getDohHighwayGeoJSON() {
       metadata: {
         agency: 'กรมทางหลวง (Department of Highways - DOH)',
         system: 'DOH Disaster Management System (HDMS API)',
-        updatedAt: new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        updatedAt: formatDateTimeCE(new Date()),
         hotline: 'สายด่วนกรมทางหลวง 1586 (โทรฟรีตลอด 24 ชม.)',
         count: features.length
       },

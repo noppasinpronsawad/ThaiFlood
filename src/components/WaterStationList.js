@@ -14,43 +14,10 @@ import { evaluateStationRisk } from '../services/hydrologyService.js';
 import { fetch7DayWeatherForecast, fetchCurrentProvinceWeather, THAI_PROVINCES } from '../services/weatherService.js';
 import { identifyRockUnit } from '../services/geologyService.js';
 import { evaluateDamRuleCurve } from '../services/damRuleCurveService.js';
-import { fetchLiveBmaRoadFloodGeoJSON } from '../services/bmaFloodRoadService.js';
-
-let liveBmaFloodedPoints = [];
-fetchLiveBmaRoadFloodGeoJSON().then((geo) => {
-  if (geo && Array.isArray(geo.features)) {
-    liveBmaFloodedPoints = geo.features
-      .filter((f) => f.properties && f.properties.isFlooded && f.geometry && f.geometry.coordinates)
-      .map((f) => f.geometry.coordinates);
-  }
-}).catch(() => {});
-
-// Helper: Haversine distance in km to nearest genuine BMA flooded road station
+import { t, getLanguage, localizeName, localizeProvince, localizeBasin, localizeAgency, localizeDateTime, formatUnit, formatDateTimeCE, THAI_PROVINCE_EN_MAP } from '../services/i18nService.js';
+// BMA road layer removed (getMinDistanceToBMARoads retained for backward compatibility: distToRoads <= 5.0 retired)
 function getMinDistanceToBMARoads(lat, lng) {
-  const latitude = typeof lat === 'number' ? lat : parseFloat(lat);
-  const longitude = typeof lng === 'number' ? lng : parseFloat(lng);
-  if (isNaN(latitude) || isNaN(longitude)) return 999999;
-
-  // BMA rough bounding box check: Lat 13.3 - 14.2, Lng 100.1 - 101.0
-  if (latitude < 13.3 || latitude > 14.2 || longitude < 100.1 || longitude > 101.0) {
-    return 999999;
-  }
-
-  let minDist = Infinity;
-  for (const [rLng, rLat] of liveBmaFloodedPoints) {
-    const dLat = (rLat - latitude) * (Math.PI / 180);
-    const dLng = (rLng - longitude) * (Math.PI / 180);
-    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-              Math.cos(latitude * (Math.PI / 180)) * Math.cos(rLat * (Math.PI / 180)) *
-              Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distKm = 6371 * c;
-    if (distKm < minDist) {
-      minDist = distKm;
-      if (minDist <= 5.0) return minDist;
-    }
-  }
-  return minDist;
+  return 999999;
 }
 
 export function createWaterStationList(stations, onStationSelect) {
@@ -61,6 +28,12 @@ export function createWaterStationList(stations, onStationSelect) {
   let currentItem = stations.find((s) => s.status === 'critical') || stations[0] || {};
   let isVisible = false;
 
+  window.addEventListener('thaiflood:language-changed', () => {
+    if (isVisible && currentItem) {
+      render();
+    }
+  });
+
   function getActiveLayers() {
     const isChecked = (id) => {
       const el = document.querySelector(id);
@@ -69,13 +42,13 @@ export function createWaterStationList(stations, onStationSelect) {
     return {
       dams: isChecked('#toggle-dams'),
       stations: isChecked('#toggle-stations'),
-      bmaRoads: isChecked('#toggle-bma-roads'),
       satWater: isChecked('#toggle-sat-water'),
       satClouds: isChecked('#toggle-sat-clouds'),
       geology: isChecked('#toggle-dmr-geology'),
       gfs: isChecked('#toggle-gfs'),
       ecmwf: isChecked('#toggle-ecmwf'),
-      traffic: isChecked('#toggle-traffic')
+      traffic: isChecked('#toggle-traffic'),
+      cctv: isChecked('#toggle-cctv')
     };
   }
 
@@ -102,6 +75,8 @@ export function createWaterStationList(stations, onStationSelect) {
     // Determine type of primary entity
     if (currentItem.isDam || currentItem.currentStorage !== undefined) {
       renderDamSheet();
+    } else if (currentItem.isCctv) {
+      renderCctvSheet();
     } else if (currentItem.isDohRoad) {
       renderDohRoadSheet();
     } else if (currentItem.isRoad) {
@@ -110,7 +85,9 @@ export function createWaterStationList(stations, onStationSelect) {
       renderTraffySheet();
     } else if (currentItem.isUserLocation) {
       renderUserLocationSheet();
-    } else if (currentItem.isElevation || currentItem.isFloodExtent || currentItem.isNWP) {
+    } else if (currentItem.isGeology) {
+      renderGeologySheet();
+    } else if (currentItem.isElevation || currentItem.isFloodExtent || currentItem.isNWP || currentItem.isGeneric) {
       renderGenericSheet();
     } else {
       renderStationSheet();
@@ -129,47 +106,48 @@ export function createWaterStationList(stations, onStationSelect) {
       ? Math.min(100, Math.max(8, Math.round((st.currentLevel / st.bankCapacity) * 100)))
       : 50;
 
+    const isEn = getLanguage() === 'en';
     let statusColor = '#188038';
     let statusText = hasBank && diff !== null
-      ? `ระดับน้ำปกติ (ต่ำกว่าตลิ่ง ${diff} ม.)`
-      : 'ระดับน้ำปกติ (สถานะควบคุมได้)';
+      ? (isEn ? `Normal Level (${diff} m below bank)` : `ระดับน้ำปกติ (ต่ำกว่าตลิ่ง ${diff} ม.)`)
+      : (isEn ? 'Normal Level (Under Control)' : 'ระดับน้ำปกติ (สถานะควบคุมได้)');
     let statusBannerBg = '#e6f4ea';
     let statusBannerText = '#137333';
 
     if (isOverflow) {
       statusColor = '#d93025';
       statusText = diff !== null
-        ? `🔴 น้ำล้นตลิ่งแล้ว (+${diff} ม.)`
-        : '🔴 วิกฤต: ระดับน้ำล้นตลิ่งแล้ว';
+        ? (isEn ? `🔴 Overbank Flood (+${diff} m)` : `🔴 น้ำล้นตลิ่งแล้ว (+${diff} ม.)`)
+        : (isEn ? '🔴 Critical: Overbank Cresting' : '🔴 วิกฤต: ระดับน้ำล้นตลิ่งแล้ว');
       statusBannerBg = '#fce8e6';
       statusBannerText = '#c5221f';
     } else if (st.status === 'warning' || st.situationLevel === 4) {
       statusColor = '#f29900';
       statusText = diff !== null
-        ? `🟠 เฝ้าระวังน้ำสูง (เหลือ ${diff} ม.)`
-        : '🟠 เฝ้าระวัง: ระดับน้ำใกล้ตลิ่ง';
+        ? (isEn ? `🟠 High Water Watch (${diff} m left)` : `🟠 เฝ้าระวังน้ำสูง (เหลือ ${diff} ม.)`)
+        : (isEn ? '🟠 Warning: Approaching Riverbank' : '🟠 เฝ้าระวัง: ระดับน้ำใกล้ตลิ่ง');
       statusBannerBg = '#fef7e0';
       statusBannerText = '#b06000';
     } else if (st.status === 'low') {
       statusColor = '#64748b';
-      statusText = `🔵 ระดับน้ำน้อย`;
+      statusText = isEn ? '🔵 Low Water Level' : '🔵 ระดับน้ำน้อย';
       statusBannerBg = '#f1f5f9';
       statusBannerText = '#334155';
     }
 
     const subLocation = [
-      st.amphoe ? 'อ.' + st.amphoe : '',
-      st.province ? 'จ.' + st.province : ''
+      st.amphoe ? (isEn ? (st.amphoe_en || st.amphoe) : ('อ.' + st.amphoe)) : '',
+      localizeProvince(st)
     ].filter(Boolean).join(' ');
-    const subtitle = `${subLocation ? subLocation + ' · ' : ''}${st.river || st.basin} (${st.agency || 'สสน.'})`;
+    const subtitle = `${subLocation ? subLocation + ' · ' : ''}${localizeBasin(st)} (${localizeAgency(st)})`;
 
     sheet.innerHTML = `
       <div class="gmaps-sheet-header">
         <div style="flex: 1;">
-          <h2 class="gmaps-place-title">📍 ${st.name}</h2>
+          <h2 class="gmaps-place-title">📍 ${localizeName(st)}</h2>
           <div class="gmaps-place-sub">${subtitle}</div>
         </div>
-        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="ปิดแผงข้อมูล">✕</button>
+        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="${t('sheet_close')}">✕</button>
       </div>
 
       <div class="gmaps-status-banner" style="background: ${statusBannerBg}; color: ${statusBannerText}; border: 1px solid ${statusColor}35;">
@@ -177,7 +155,7 @@ export function createWaterStationList(stations, onStationSelect) {
         <div>
           <div style="font-weight: 700; font-size: 14px;">${statusText}</div>
           <div style="font-size: 11.5px; opacity: 0.9;">
-            ${isOverflow ? 'มวลน้ำล้นตลิ่งเข้าท่วมพื้นที่ลุ่มต่ำริมน้ำ' : (st.status === 'warning' ? 'ระดับน้ำใกล้ตลิ่ง เข้าสู่เกณฑ์เฝ้าระวังภัย' : 'ระดับน้ำในแม่น้ำยังอยู่ภายใต้เกณฑ์ควบคุม')}
+            ${isOverflow ? t('sheet_overflow_warning') : (st.status === 'warning' ? t('sheet_near_bank_warning') : t('sheet_normal_info'))}
           </div>
         </div>
       </div>
@@ -185,26 +163,26 @@ export function createWaterStationList(stations, onStationSelect) {
       <div class="gmaps-action-row">
         <button class="gmaps-action-btn" id="btn-focus-station">
           <span style="font-size: 15px; color: #1a73e8;">📍</span>
-          <span>ซูมดูพิกัด</span>
+          <span>${t('sheet_zoom_point')}</span>
         </button>
         <button class="gmaps-action-btn" id="btn-view-weather">
           <span style="font-size: 15px; color: #1a73e8;">🌧️</span>
-          <span>พยากรณ์อากาศ</span>
+          <span>${t('sheet_weather_forecast')}</span>
         </button>
       </div>
 
       <div style="padding: 12px 16px; border-bottom: 1px solid #e8eaed;">
         <div style="display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; margin-bottom: 6px;">
-          <span>ระดับน้ำจริง: <b style="color: ${statusColor}; font-size: 16px;">${(st.currentLevel ?? 0).toFixed(2)} ม. (รทก.)</b></span>
-          <span style="color: #5f6368;">${hasBank ? `ระดับตลิ่ง: ${st.bankCapacity.toFixed(2)} ม.` : 'ไม่มีข้อมูลระดับตลิ่ง'}</span>
+          <span>${t('sheet_water_level_msl')}: <b style="color: ${statusColor}; font-size: 16px;">${formatUnit((st.currentLevel ?? 0).toFixed(2), 'm_msl')}</b></span>
+          <span style="color: #5f6368;">${hasBank ? `${t('sheet_bank_level')}: ${formatUnit(st.bankCapacity.toFixed(2), 'm_msl')}` : t('sheet_bank_empty')}</span>
         </div>
         <div class="gmaps-bar-track">
           <div class="gmaps-bar-fill" style="width: ${percentFill}%; background: ${statusColor};"></div>
         </div>
         <div style="display: flex; justify-content: space-between; font-size: 11px; color: #70757a; margin-top: 4px;">
           <span>0%</span>
-          <span>${hasBank ? `ความจุลำน้ำ: <b>${percentFill}%</b> (${st.diffDisplay || ''})` : `สถานะ: <b>${st.diffDisplay || 'ปกติ'}</b>`}</span>
-          <span>100% (ตลิ่ง)</span>
+          <span>${hasBank ? `${t('sheet_capacity')}: <b>${percentFill}%</b> (${st.diffDisplay || ''})` : `Status: <b>${st.diffDisplay || 'Normal'}</b>`}</span>
+          <span>100% (${isEn ? 'Bank' : 'ตลิ่ง'})</span>
         </div>
       </div>
 
@@ -212,25 +190,25 @@ export function createWaterStationList(stations, onStationSelect) {
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">🕒</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">วันและเวลาตรวจวัดล่าสุด</div>
-            <div class="gmaps-row-value" style="color: #1a73e8; font-weight: 600;">${st.datetime || '29 ก.ย. 2026 01:00 น.'}</div>
+            <div class="gmaps-row-label">${t('sheet_last_telemetry')}</div>
+            <div class="gmaps-row-value" style="color: #1a73e8; font-weight: 600;">${localizeDateTime(st.datetime) || (isEn ? '29 Sep 2026 01:00' : '29 ก.ย. 2026 01:00 น.')}</div>
           </div>
         </div>
 
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">🏛️</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">หน่วยงานรับผิดชอบ</div>
-            <div class="gmaps-row-value">${st.agency || 'สสน. (สถาบันสารสนเทศทรัพยากรน้ำ)'}</div>
+            <div class="gmaps-row-label">${t('sheet_operating_agency')}</div>
+            <div class="gmaps-row-value">${localizeAgency(st) || (isEn ? 'HII (Hydro-Informatics Institute)' : 'สสน. (สถาบันสารสนเทศทรัพยากรน้ำ)')}</div>
           </div>
         </div>
 
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">📊</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">แนวโน้มระดับน้ำ</div>
+            <div class="gmaps-row-label">${t('sheet_water_trend')}</div>
             <div class="gmaps-row-value" style="color: ${st.trend === 'rising' ? '#d93025' : '#202124'}; font-weight: 600;">
-              ${st.trend === 'rising' ? '⬆️ กำลังเพิ่มขึ้น' : (st.trend === 'falling' ? '⬇️ กำลังลดลง' : '➡️ ระดับน้ำทรงตัว')}
+              ${st.trend === 'rising' ? t('sheet_trend_rising') : (st.trend === 'falling' ? t('sheet_trend_falling') : t('sheet_trend_stable'))}
             </div>
           </div>
         </div>
@@ -238,8 +216,8 @@ export function createWaterStationList(stations, onStationSelect) {
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">⚡</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">อัตราการระบายน้ำ (Discharge)</div>
-            <div class="gmaps-row-value">${st.flowRate ? st.flowRate.toLocaleString() + ' ลบ.ม./วินาที' : 'ไม่มีเซนเซอร์วัดอัตราไหล'}</div>
+            <div class="gmaps-row-label">${t('sheet_discharge_rate')}</div>
+            <div class="gmaps-row-value">${st.flowRate ? formatUnit(st.flowRate.toLocaleString(), 'm3_s') : t('sheet_no_flow_sensor')}</div>
           </div>
         </div>
 
@@ -247,20 +225,20 @@ export function createWaterStationList(stations, onStationSelect) {
           <div class="gmaps-detail-row" id="st-sheet-geol-row">
             <span class="gmaps-row-icon">🪨</span>
             <div class="gmaps-row-content">
-              <div class="gmaps-row-label">หน่วยหินฐาน (DMR 1:250k)</div>
-              <div class="gmaps-row-value" id="st-sheet-geol-val" style="color: #7c3aed; font-weight: 600;">กำลังตรวจสอบหินฐาน...</div>
+              <div class="gmaps-row-label">${t('sheet_bedrock_unit')}</div>
+              <div class="gmaps-row-value" id="st-sheet-geol-val" style="color: #7c3aed; font-weight: 600;">${t('sheet_bedrock_inspecting')}</div>
             </div>
           </div>
         ` : ''}
       </div>
 
       <div style="margin: 10px 16px; padding: 10px 12px; background: #e8f0fe; border-radius: 8px; font-size: 12px; color: #174ea6; line-height: 1.45;">
-        <b>💡 คำแนะนำสำหรับประชาชน:</b><br/>
+        <b>💡 ${t('sheet_public_advisory')}:</b><br/>
         ${isOverflow
-          ? 'ระดับน้ำสูงกว่าตลิ่งแล้ว ขอให้ประชาชนริมแม่น้ำยกสิ่งของขึ้นที่สูง ตัดไฟจุดน้ำท่วม และเตรียมพร้อมอพยพสัตว์เลี้ยง'
+          ? (isEn ? 'Water levels have crested overbank. Riverside residents should elevate belongings, disconnect flood-exposed power lines, and prepare pets.' : 'ระดับน้ำสูงกว่าตลิ่งแล้ว ขอให้ประชาชนริมแม่น้ำยกสิ่งของขึ้นที่สูง ตัดไฟจุดน้ำท่วม และเตรียมพร้อมอพยพสัตว์เลี้ยง')
           : (st.status === 'warning'
-            ? 'ระดับน้ำใกล้ตลิ่งและมีแนวโน้มสูงขึ้น ขอให้จัดเตรียมกระสอบทราย ตรวจสอบเครื่องสูบน้ำ และติดตามสถานการณ์ใกล้ชิด'
-            : 'ระดับน้ำในลำน้ำยังอยู่ในเกณฑ์ควบคุม สามารถสัญจรและใช้ชีวิตได้ตามปกติ')}
+            ? (isEn ? 'Water level is near riverbank and rising. Prepare sandbags, test drainage sump pumps, and stay tuned to live reports.' : 'ระดับน้ำใกล้ตลิ่งและมีแนวโน้มสูงขึ้น ขอให้จัดเตรียมกระสอบทราย ตรวจสอบเครื่องสูบน้ำ และติดตามสถานการณ์ใกล้ชิด')
+            : (isEn ? 'River stage is within standard safe operational capacity. Normal travel and activities may continue.' : 'ระดับน้ำในลำน้ำยังอยู่ในเกณฑ์ควบคุม สามารถสัญจรและใช้ชีวิตได้ตามปกติ'))}
       </div>
 
       <!-- Multi-Layer Companion Cards (แสดงข้อมูลต่อกันเมื่อเปิดหลายเลเยอร์) -->
@@ -283,42 +261,53 @@ export function createWaterStationList(stations, onStationSelect) {
     const p = typeof dam.percentStorage === 'number' ? dam.percentStorage : parseFloat(dam.percentStorage) || 0;
     const rc = evaluateDamRuleCurve(dam, dam.rawDate || dam.date || new Date());
     
+    const isEn = getLanguage() === 'en';
     // Evaluate status and banner strictly according to Rule Curve
     let statusColor = '#0284c7';
     let statusBannerBg = '#f0f9ff';
     let statusBannerText = '#0369a1';
-    let statusText = `🔵 เกณฑ์ปกติ: ${p}% ของความจุ (อยู่ในเกณฑ์ควบคุม Rule Curve)`;
+    let statusText = isEn
+      ? `🔵 Normal: ${p}% Capacity (Within Rule Curve)`
+      : `🔵 เกณฑ์ปกติ: ${p}% ของความจุ (อยู่ในเกณฑ์ควบคุม Rule Curve)`;
 
     if (rc && rc.zone === 'above_urc') {
       const diff = (p - rc.urcPercent).toFixed(1);
       statusColor = '#dc2626';
       statusBannerBg = '#fef2f2';
       statusBannerText = '#b91c1c';
-      statusText = `🔴 วิกฤต (น้ำมาก): ${p}% ของความจุ (เกินเกณฑ์ควบคุมบน URC +${diff}%)`;
+      statusText = isEn
+        ? `🔴 Critical: ${p}% Capacity (Above URC +${diff}%)`
+        : `🔴 วิกฤต (น้ำมาก): ${p}% ของความจุ (เกินเกณฑ์ควบคุมบน URC +${diff}%)`;
     } else if (rc && p >= rc.urcPercent - 5) {
       const margin = (rc.urcPercent - p).toFixed(1);
       statusColor = '#ea580c';
       statusBannerBg = '#fff7ed';
       statusBannerText = '#c2410c';
-      statusText = `🟠 เฝ้าระวัง (น้ำมาก): ${p}% ของความจุ (ใกล้เกณฑ์ควบคุมบน URC เหลือ ${margin}%)`;
+      statusText = isEn
+        ? `🟠 Watch: ${p}% Capacity (Near URC, ${margin}% left)`
+        : `🟠 เฝ้าระวัง (น้ำมาก): ${p}% ของความจุ (ใกล้เกณฑ์ควบคุมบน URC เหลือ ${margin}%)`;
     } else if (rc && rc.zone === 'below_lrc') {
       const diff = (rc.lrcPercent - p).toFixed(1);
       statusColor = '#d97706';
       statusBannerBg = '#fffbeb';
       statusBannerText = '#b45309';
-      statusText = `🟡 น้ำน้อย: ${p}% ของความจุ (ต่ำกว่าเกณฑ์ควบคุมล่าง LRC -${diff}%)`;
+      statusText = isEn
+        ? `🟡 Low Storage: ${p}% Capacity (Below LRC -${diff}%)`
+        : `🟡 น้ำน้อย: ${p}% ของความจุ (ต่ำกว่าเกณฑ์ควบคุมล่าง LRC -${diff}%)`;
     }
-
-    const subLocation = [dam.amphoe ? 'อ.' + dam.amphoe : '', dam.province ? 'จ.' + dam.province : ''].filter(Boolean).join(' ');
-    const subtitle = `${subLocation ? subLocation + ' · ' : ''}${dam.basin} (${dam.agency})`;
+    const subLocation = [
+      dam.amphoe ? (isEn ? (dam.amphoe_en || dam.amphoe) : ('อ.' + dam.amphoe)) : '',
+      localizeProvince(dam)
+    ].filter(Boolean).join(' ');
+    const subtitle = `${subLocation ? subLocation + ' · ' : ''}${localizeBasin(dam)} (${localizeAgency(dam)})`;
 
     sheet.innerHTML = `
       <div class="gmaps-sheet-header">
         <div style="flex: 1;">
-          <h2 class="gmaps-place-title">${dam.isMediumReservoir ? '💧' : '🏢'} ${dam.name}</h2>
+          <h2 class="gmaps-place-title">${dam.isMediumReservoir ? '💧' : '🏢'} ${localizeName(dam)}</h2>
           <div class="gmaps-place-sub">${subtitle}</div>
         </div>
-        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="ปิดแผงข้อมูล">✕</button>
+        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="${t('sheet_close')}">✕</button>
       </div>
 
       <div class="gmaps-status-banner" style="background: ${statusBannerBg}; color: ${statusBannerText}; border: 1px solid ${statusColor}35;">
@@ -326,7 +315,7 @@ export function createWaterStationList(stations, onStationSelect) {
         <div>
           <div style="font-weight: 700; font-size: 14px;">${statusText}</div>
           <div style="font-size: 11.5px; opacity: 0.9;">
-            ${dam.isMediumReservoir ? 'ข้อมูลโทรมาตรอ่างเก็บน้ำขนาดกลางจากกรมชลประทาน (ชป.)' : 'ข้อมูลโทรมาตรเขื่อนสดจากคลังข้อมูลน้ำแห่งชาติ สสน. ร่วมกับ กฟผ./ชป.'}
+            ${dam.isMediumReservoir ? t('dam_desc_medium') : t('dam_desc_major')}
           </div>
         </div>
       </div>
@@ -334,26 +323,26 @@ export function createWaterStationList(stations, onStationSelect) {
       <div class="gmaps-action-row">
         <button class="gmaps-action-btn" id="btn-focus-station">
           <span style="font-size: 15px; color: #1a73e8;">📍</span>
-          <span>ซูมดูพิกัด</span>
+          <span>${t('sheet_zoom_point')}</span>
         </button>
         <button class="gmaps-action-btn" id="btn-view-weather">
           <span style="font-size: 15px; color: #1a73e8;">🌧️</span>
-          <span>พยากรณ์อากาศ</span>
+          <span>${t('sheet_weather_forecast')}</span>
         </button>
       </div>
 
       <div style="padding: 12px 16px; border-bottom: 1px solid #e8eaed;">
         <div style="display: flex; justify-content: space-between; font-size: 12.5px; font-weight: 600; margin-bottom: 6px;">
-          <span>ปริมาณน้ำปัจจุบัน: <b style="color: ${statusColor}; font-size: 16px;">${(dam.currentStorage ?? 0).toLocaleString()} ล้าน ลบ.ม.</b></span>
-          <span style="color: #5f6368;">ความจุปกติ: ${(dam.normalStorage ?? 0).toLocaleString()} ล้าน ลบ.ม.</span>
+          <span>${t('sheet_storage')}: <b style="color: ${statusColor}; font-size: 16px;">${(dam.currentStorage ?? 0).toLocaleString()} ${isEn ? 'Million m³' : 'ล้าน ลบ.ม.'}</b></span>
+          <span style="color: #5f6368;">${t('sheet_capacity')}: ${(dam.normalStorage ?? 0).toLocaleString()} ${isEn ? 'Million m³' : 'ล้าน ลบ.ม.'}</span>
         </div>
         <div class="gmaps-bar-track">
           <div class="gmaps-bar-fill" style="width: ${Math.min(100, Math.max(5, dam.percentStorage ?? 50))}%; background: ${statusColor};"></div>
         </div>
         <div style="display: flex; justify-content: space-between; font-size: 11px; color: #70757a; margin-top: 4px;">
           <span>0%</span>
-          <span>ระดับกักเก็บ: <b>${dam.percentStorage}%</b></span>
-          <span>100% (ความจุปกติ)</span>
+          <span>${isEn ? 'Storage Ratio' : 'ระดับกักเก็บ'}: <b>${dam.percentStorage}%</b></span>
+          <span>100% (${isEn ? 'Normal Capacity' : 'ความจุปกติ'})</span>
         </div>
       </div>
 
@@ -363,42 +352,42 @@ export function createWaterStationList(stations, onStationSelect) {
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
             <div style="display: flex; align-items: center; gap: 6px;">
               <span style="font-size: 16px;">💧</span>
-              <span style="font-weight: 700; font-size: 13px; color: #166534;">สถานะกักเก็บน้ำอ่างขนาดกลาง</span>
+              <span style="font-weight: 700; font-size: 13px; color: #166534;">${t('sheet_medium_res_status')}</span>
             </div>
             <span style="font-size: 11px; padding: 2px 8px; border-radius: 12px; font-weight: 700; background: ${statusBannerBg}; color: ${statusColor}; border: 1px solid ${statusColor}40;">
-              ${p}% ของความจุ
+              ${p}% ${isEn ? 'Capacity' : 'ของความจุ'}
             </span>
           </div>
 
           <div style="font-size: 11.5px; color: #475569; margin-bottom: 12px; line-height: 1.4;">
-            อ่างเก็บน้ำขนาดกลางชลประทาน ติดตามปริมาตรน้ำกักเก็บและสมดุลการไหลเข้า-ออกเพื่อสนับสนุนการบริหารจัดการน้ำระดับลุ่มน้ำ
+            ${t('sheet_medium_res_desc') || 'อ่างเก็บน้ำขนาดกลางชลประทาน ติดตามปริมาตรน้ำกักเก็บและสมดุลการไหลเข้า-ออกเพื่อสนับสนุนการบริหารจัดการน้ำระดับลุ่มน้ำ'}
           </div>
 
           <!-- Adaptive Storage Gauge Progress Bar (0 - 100%) -->
           <div style="margin-bottom: 12px;">
             <div style="display: flex; justify-content: space-between; font-size: 11.5px; margin-bottom: 5px;">
-              <span style="color: #64748b;">ระดับกักเก็บจริง</span>
-              <span style="font-weight: 700; color: ${statusColor};">${(dam.currentStorage ?? 0).toLocaleString()} / ${((dam.maxStorage || dam.normalStorage) ?? 0).toLocaleString()} ล้าน ลบ.ม.</span>
+              <span style="color: #64748b;">${t('sheet_current_storage')}</span>
+              <span style="font-weight: 700; color: ${statusColor};">${(dam.currentStorage ?? 0).toLocaleString()} / ${((dam.maxStorage || dam.normalStorage) ?? 0).toLocaleString()} ${isEn ? 'Million m³' : 'ล้าน ลบ.ม.'}</span>
             </div>
             <div style="height: 10px; background: #e2e8f0; border-radius: 5px; overflow: hidden;">
               <div style="width: ${Math.min(100, Math.max(4, p))}%; height: 100%; background: ${statusColor}; border-radius: 5px; transition: width 0.4s ease;"></div>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 10.5px; color: #94a3b8; margin-top: 3px;">
-              <span>0% (แห้ง)</span>
-              <span>50% (ปกติ)</span>
-              <span>100% (เต็มความจุ)</span>
+              <span>0% (${t('sheet_dry')})</span>
+              <span>50% (${t('sheet_normal')})</span>
+              <span>100% (${t('sheet_full')})</span>
             </div>
           </div>
 
           <!-- Water Balance Card -->
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px;">
             <div style="padding: 8px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;">
-              <div style="color: #64748b; font-size: 10.5px;">💧 น้ำไหลเข้าวันนี้</div>
-              <div style="font-weight: 700; color: #0284c7; font-size: 13px;">+${(dam.inflow ?? 0).toLocaleString()} <span style="font-size: 10px; font-weight: normal;">ล้าน ลบ.ม.</span></div>
+              <div style="color: #64748b; font-size: 10.5px;">${t('sheet_inflow_today') || '💧 น้ำไหลเข้าวันนี้'}</div>
+              <div style="font-weight: 700; color: #0284c7; font-size: 13px;">+${(dam.inflow ?? 0).toLocaleString()} <span style="font-size: 10px; font-weight: normal;">${isEn ? 'Million m³' : 'ล้าน ลบ.ม.'}</span></div>
             </div>
             <div style="padding: 8px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px;">
-              <div style="color: #64748b; font-size: 10.5px;">🌊 น้ำระบายออกวันนี้</div>
-              <div style="font-weight: 700; color: #ea580c; font-size: 13px;">-${(dam.released ?? 0).toLocaleString()} <span style="font-size: 10px; font-weight: normal;">ล้าน ลบ.ม.</span></div>
+              <div style="color: #64748b; font-size: 10.5px;">${t('sheet_outflow_today')}</div>
+              <div style="font-weight: 700; color: #ea580c; font-size: 13px;">-${(dam.released ?? 0).toLocaleString()} <span style="font-size: 10px; font-weight: normal;">${isEn ? 'Million m³' : 'ล้าน ลบ.ม.'}</span></div>
             </div>
           </div>
 
@@ -406,15 +395,15 @@ export function createWaterStationList(stations, onStationSelect) {
           ${rc ? `
           <div style="margin-top: 10px; padding: 10px; background: #ffffff; border: 1px solid #bbf7d0; border-radius: 8px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-              <span style="font-weight: 700; font-size: 11px; color: #166534;">📈 เกณฑ์ควบคุมน้ำตามฤดูกาล (Rule Curve ลุ่มน้ำ)</span>
+              <span style="font-weight: 700; font-size: 11px; color: #166534;">${t('sheet_rule_curve_seasonal')}</span>
               <span style="font-size: 10px; padding: 1px 6px; border-radius: 8px; background: ${rc.badgeBg}; color: ${rc.zoneColor}; font-weight: 700;">
-                ${rc.zone === 'above_urc' ? 'เกินเกณฑ์บน (URC)' : (rc.zone === 'below_lrc' ? 'ต่ำกว่าเกณฑ์ล่าง (LRC)' : 'เกณฑ์ควบคุมปกติ')}
+                ${rc.zone === 'above_urc' ? t('sheet_above_urc') : (rc.zone === 'below_lrc' ? t('sheet_below_lrc') : t('sheet_normal_control'))}
               </span>
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 10.5px; color: #64748b;">
-              <span>เกณฑ์ล่าง (LRC): <b style="color: #d97706;">${rc.lrcPercent}%</b></span>
-              <span>ระดับปัจจุบัน: <b style="color: ${statusColor};">${p}%</b></span>
-              <span>เกณฑ์บน (URC): <b style="color: #dc2626;">${rc.urcPercent}%</b></span>
+              <span>${t('sheet_lrc_label')}: <b style="color: #d97706;">${rc.lrcPercent}%</b></span>
+              <span>${isEn ? 'Current:' : 'ระดับปัจจุบัน:'} <b style="color: ${statusColor};">${p}%</b></span>
+              <span>${t('sheet_urc_label')}: <b style="color: #dc2626;">${rc.urcPercent}%</b></span>
             </div>
           </div>
           ` : ''}
@@ -424,23 +413,23 @@ export function createWaterStationList(stations, onStationSelect) {
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
             <div style="display: flex; align-items: center; gap: 6px;">
               <span style="font-size: 16px;">📈</span>
-              <span style="font-weight: 700; font-size: 13px; color: #1e293b;">เกณฑ์ควบคุมน้ำในเขื่อน (Rule Curve)</span>
+              <span style="font-weight: 700; font-size: 13px; color: #1e293b;">${t('sheet_rule_curve_dam') || 'เกณฑ์ควบคุมน้ำในเขื่อน (Rule Curve)'}</span>
             </div>
             <span style="font-size: 11px; padding: 2px 8px; border-radius: 12px; font-weight: 600; background: ${rc.badgeBg}; color: ${rc.zoneColor}; border: 1px solid ${rc.border};">
-              ${rc.zone === 'above_urc' ? 'เกินเกณฑ์บน (URC)' : (rc.zone === 'below_lrc' ? 'ต่ำกว่าเกณฑ์ล่าง (LRC)' : 'เกณฑ์ควบคุมปกติ')}
+              ${rc.zone === 'above_urc' ? t('sheet_above_urc') : (rc.zone === 'below_lrc' ? t('sheet_below_lrc') : t('sheet_normal_control'))}
             </span>
           </div>
 
           <div style="font-size: 11.5px; color: #64748b; margin-bottom: 12px; line-height: 1.4;">
-            ประเมินตามปฏิทินฤดูกาล กรมชลประทาน & กฟผ. (เปรียบเทียบระดับน้ำสดกับเส้นควบคุม Upper / Lower Rule Curve)
+            ${t('sheet_rule_curve_eval_desc')}
           </div>
 
           <!-- 3-Zone Gauge Bar -->
           <div style="position: relative; margin: 18px 4px 12px 4px;">
             <div style="height: 14px; border-radius: 7px; overflow: hidden; display: flex; box-shadow: inset 0 1px 3px rgba(0,0,0,0.15);">
-              <div style="width: ${rc.lrcPercent}%; background: linear-gradient(90deg, #fef3c7, #fde68a); border-right: 2px dashed #d97706;" title="โซนน้ำน้อย (ต่ำกว่า LRC): 0 - ${rc.lrcPercent}%"></div>
-              <div style="width: ${rc.urcPercent - rc.lrcPercent}%; background: linear-gradient(90deg, #bae6fd, #7dd3fc); border-right: 2px dashed #dc2626;" title="โซนควบคุมปกติ (LRC - URC): ${rc.lrcPercent}% - ${rc.urcPercent}%"></div>
-              <div style="width: ${100 - rc.urcPercent}%; background: linear-gradient(90deg, #fecaca, #f87171);" title="โซนเสี่ยงน้ำล้น (เหนือ URC): ${rc.urcPercent}% - 100%"></div>
+              <div style="width: ${rc.lrcPercent}%; background: linear-gradient(90deg, #fef3c7, #fde68a); border-right: 2px dashed #d97706;" title="${t('rc_gauge_low').replace('{lrc}', rc.lrcPercent)}"></div>
+              <div style="width: ${rc.urcPercent - rc.lrcPercent}%; background: linear-gradient(90deg, #bae6fd, #7dd3fc); border-right: 2px dashed #dc2626;" title="${t('rc_gauge_normal').replace('{lrc}', rc.lrcPercent).replace('{urc}', rc.urcPercent)}"></div>
+              <div style="width: ${100 - rc.urcPercent}%; background: linear-gradient(90deg, #fecaca, #f87171);" title="${t('rc_gauge_high').replace('{urc}', rc.urcPercent)}"></div>
             </div>
 
             <!-- Current Storage Needle Pin -->
@@ -456,33 +445,33 @@ export function createWaterStationList(stations, onStationSelect) {
           <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 10px; color: #64748b;">
             <div style="text-align: left;">
               <span style="display: inline-block; width: 8px; height: 8px; background: #f59e0b; border-radius: 50%; margin-right: 3px;"></span>
-              <span>เกณฑ์ล่าง (LRC): <b>${rc.lrcPercent}%</b></span>
+              <span>${t('sheet_lrc_label')}: <b>${rc.lrcPercent}%</b></span>
             </div>
             <div style="text-align: right;">
               <span style="display: inline-block; width: 8px; height: 8px; background: #ef4444; border-radius: 50%; margin-right: 3px;"></span>
-              <span>เกณฑ์บน (URC): <b>${rc.urcPercent}%</b></span>
+              <span>${t('sheet_urc_label')}: <b>${rc.urcPercent}%</b></span>
             </div>
           </div>
 
           <!-- Operational Assessment Advice Box -->
           <div style="padding: 10px; background: ${rc.badgeBg}; border-radius: 8px; border: 1px solid ${rc.border}; margin-bottom: 10px;">
             <div style="font-weight: 700; font-size: 12px; color: ${rc.zoneColor}; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-              <span>${rc.zoneLabel}</span>
+              <span>${isEn ? (rc.zoneLabelEn || rc.zoneLabel) : rc.zoneLabel}</span>
             </div>
             <div style="font-size: 11.5px; color: #334155; line-height: 1.45;">
-              ${rc.advice}
+              ${isEn ? (rc.adviceEn || rc.advice) : rc.advice}
             </div>
           </div>
 
           <!-- Threshold Metrics Breakdown -->
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px;">
             <div style="padding: 6px 8px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px;">
-              <div style="color: #64748b;">เกณฑ์ควบคุมตอนบน (URC)</div>
-              <div style="font-weight: 700; color: #dc2626; font-size: 12px;">${rc.urcStorage.toLocaleString()} ล้าน ลบ.ม.</div>
+              <div style="color: #64748b;">${t('sheet_urc_threshold')}</div>
+              <div style="font-weight: 700; color: #dc2626; font-size: 12px;">${rc.urcStorage.toLocaleString()} ${isEn ? 'Million m³' : 'ล้าน ลบ.ม.'}</div>
             </div>
             <div style="padding: 6px 8px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 6px;">
-              <div style="color: #64748b;">เกณฑ์ควบคุมตอนล่าง (LRC)</div>
-              <div style="font-weight: 700; color: #d97706; font-size: 12px;">${rc.lrcStorage.toLocaleString()} ล้าน ลบ.ม.</div>
+              <div style="color: #64748b;">${t('sheet_lrc_threshold')}</div>
+              <div style="font-weight: 700; color: #d97706; font-size: 12px;">${rc.lrcStorage.toLocaleString()} ${isEn ? 'Million m³' : 'ล้าน ลบ.ม.'}</div>
             </div>
           </div>
         </div>
@@ -492,40 +481,40 @@ export function createWaterStationList(stations, onStationSelect) {
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">📅</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">วันและเวลาตรวจวัดล่าสุด</div>
-            <div class="gmaps-row-value" style="color: #1a73e8; font-weight: 600;">${dam.datetime || dam.date || '29 ก.ย. 2026 06:00 น.'}</div>
+            <div class="gmaps-row-label">${t('sheet_last_telemetry')}</div>
+            <div class="gmaps-row-value" style="color: #1a73e8; font-weight: 600;">${localizeDateTime(dam.datetime || dam.date) || (isEn ? '29 Sep 2026 06:00' : '29 ก.ย. 2026 06:00 น.')}</div>
           </div>
         </div>
 
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">🏛️</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">หน่วยงานกำกับดูแล</div>
-            <div class="gmaps-row-value">${dam.agency || 'กฟผ. / กรมชลประทาน'}</div>
+            <div class="gmaps-row-label">${t('sheet_operating_agency')}</div>
+            <div class="gmaps-row-value">${localizeAgency(dam) || (isEn ? 'EGAT / Royal Irrigation Dept.' : 'กฟผ. / กรมชลประทาน')}</div>
           </div>
         </div>
 
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">💧</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">น้ำไหลเข้าเขื่อน (Inflow)</div>
-            <div class="gmaps-row-value" style="color: #1a73e8; font-weight: 600;">+${(dam.inflow ?? 0).toLocaleString()} ล้าน ลบ.ม./วัน</div>
+            <div class="gmaps-row-label">${t('sheet_inflow_today')}</div>
+            <div class="gmaps-row-value" style="color: #1a73e8; font-weight: 600;">+${(dam.inflow ?? 0).toLocaleString()} ${isEn ? 'Million m³/day' : 'ล้าน ลบ.ม./วัน'}</div>
           </div>
         </div>
 
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">🌊</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">น้ำระบายออก (Released)</div>
-            <div class="gmaps-row-value" style="color: #ea580c; font-weight: 600;">-${(dam.released ?? 0).toLocaleString()} ล้าน ลบ.ม./วัน</div>
+            <div class="gmaps-row-label">${t('sheet_outflow_today')}</div>
+            <div class="gmaps-row-value" style="color: #ea580c; font-weight: 600;">-${(dam.released ?? 0).toLocaleString()} ${isEn ? 'Million m³/day' : 'ล้าน ลบ.ม./วัน'}</div>
           </div>
         </div>
 
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">📊</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">ความจุกักเก็บสูงสุด (Max Capacity)</div>
-            <div class="gmaps-row-value">${(dam.maxStorage ?? 0).toLocaleString()} ล้าน ลบ.ม.</div>
+            <div class="gmaps-row-label">${t('sheet_max_capacity')}</div>
+            <div class="gmaps-row-value">${(dam.maxStorage ?? 0).toLocaleString()} ${isEn ? 'Million m³' : 'ล้าน ลบ.ม.'}</div>
           </div>
         </div>
 
@@ -533,8 +522,8 @@ export function createWaterStationList(stations, onStationSelect) {
           <div class="gmaps-detail-row" id="dam-sheet-geol-row">
             <span class="gmaps-row-icon">🪨</span>
             <div class="gmaps-row-content">
-              <div class="gmaps-row-label">หน่วยหินฐานสันเขื่อน (DMR 1:250k)</div>
-              <div class="gmaps-row-value" id="dam-sheet-geol-val" style="color: #7c3aed; font-weight: 600;">กำลังตรวจสอบหินฐาน...</div>
+              <div class="gmaps-row-label">${t('sheet_dam_geology_label')}</div>
+              <div class="gmaps-row-value" id="dam-sheet-geol-val" style="color: #7c3aed; font-weight: 600;">${t('sheet_bedrock_inspecting')}</div>
             </div>
           </div>
         ` : ''}
@@ -542,7 +531,7 @@ export function createWaterStationList(stations, onStationSelect) {
 
       ${dam.cctvUrl ? `
         <div style="margin: 10px 16px; padding: 10px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
-          <div style="font-weight: 600; font-size: 12px; margin-bottom: 6px; color: #334155;">📹 ภาพสดจากกล้อง CCTV สันเขื่อน:</div>
+          <div style="font-weight: 600; font-size: 12px; margin-bottom: 6px; color: #334155;">${t('sheet_cctv_dam_crest')}</div>
           <img src="${dam.cctvUrl}" alt="CCTV ${dam.name}" style="width: 100%; height: auto; border-radius: 6px;" onerror="this.parentElement.style.display='none';" />
         </div>
       ` : ''}
@@ -560,10 +549,150 @@ export function createWaterStationList(stations, onStationSelect) {
   }
 
   // ==========================================
+  // 2.2 Live Official CCTV Surveillance Sheet
+  // ==========================================
+  function renderCctvSheet() {
+    const cam = currentItem;
+    const isEn = getLanguage() === 'en';
+    const isDoh = cam.agencyCode === 'DOH';
+    const isBma = cam.agencyCode === 'BMA';
+
+    const agencyBadgeColor = isDoh ? '#1e40af' : (isBma ? '#15803d' : '#0369a1');
+    const agencyBadgeBg = isDoh ? '#dbeafe' : (isBma ? '#dcfce7' : '#e0f2fe');
+    const agencyTitle = localizeAgency(cam) || (isEn ? 'Official Surveillance Camera' : 'กล้องตรวจการณ์ภาครัฐ');
+
+    sheet.innerHTML = `
+      <div class="gmaps-sheet-header">
+        <div style="flex: 1;">
+          <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+            <span style="font-size: 11px; font-weight: 700; color: ${agencyBadgeColor}; background: ${agencyBadgeBg}; padding: 2px 8px; border-radius: 999px;">
+              ${agencyTitle}
+            </span>
+            <span style="font-size: 11px; color: #64748b;">${isEn ? 'ID:' : 'รหัส:'} ${cam.id || 'CCTV'}</span>
+          </div>
+          <h2 class="gmaps-place-title">📹 ${localizeName(cam) || (isEn ? 'CCTV Surveillance Camera' : 'กล้อง CCTV ตรวจการณ์')}</h2>
+          <div class="gmaps-place-sub">${localizeProvince(cam) || (isEn ? 'Thailand' : 'ประเทศไทย')} · ${cam.route || ''} ${cam.km ? `(${cam.km})` : ''}</div>
+        </div>
+        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="${t('sheet_close')}">✕</button>
+      </div>
+
+      <!-- Live Snapshot Container (16:9 On-Demand Fetch) -->
+      <div class="gmaps-cctv-viewer" style="margin: 12px 16px; background: #0f172a; border-radius: 12px; overflow: hidden; position: relative; aspect-ratio: 16/9; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+        <img 
+          id="cctv-live-img"
+          src="${cam.snapshotUrl}"
+          alt="${cam.name}"
+          loading="lazy"
+          referrerpolicy="no-referrer"
+          style="width: 100%; height: 100%; object-fit: cover; display: block;"
+          onload="const l = this.parentElement.querySelector('.cctv-img-loader'); if (l) l.style.display='none';"
+          onerror="
+            this.style.display = 'none';
+            const fallback = this.parentElement.querySelector('.cctv-img-offline');
+            if (fallback) fallback.style.display = 'flex';
+          "
+        />
+        <div class="cctv-img-loader" style="position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #1e293b; color: #94a3b8; font-size: 12px; gap: 8px;">
+          <div style="font-size: 24px; animation: gmaps-pulse 1.2s infinite ease-in-out;">📹</div>
+          <span>${t('sheet_cctv_connecting')}</span>
+        </div>
+        <div class="cctv-img-offline" style="display: none; position: absolute; inset: 0; flex-direction: column; align-items: center; justify-content: center; background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #f8fafc; text-align: center; padding: 20px 16px; font-size: 12px;">
+          <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 8px;">
+            <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 6px #22c55e;"></span>
+            <span style="font-size: 11.5px; font-weight: 700; color: #38bdf8;">${isEn ? 'Official Surveillance Stream Connected' : 'สัญญาณกล้องสดเชื่อมต่อผ่านระบบทางการ'}</span>
+          </div>
+          <div style="font-size: 13px; font-weight: 700; color: #ffffff; margin-bottom: 4px;">${localizeName(cam) || t('sheet_cctv_title')}</div>
+          <div style="color: #94a3b8; font-size: 11px; margin-bottom: 14px; line-height: 1.4; max-width: 280px;">${isEn ? `Streaming feed provided via ${localizeAgency(cam) || 'Official Network'}` : `ระบบถ่ายทอดสดแบบสตรีมมิ่งเปิดให้รับชมผ่านเครือข่ายของ ${cam.agency || 'หน่วยงาน'}`}</div>
+          ${cam.portalUrl ? `
+            <a href="${cam.portalUrl}" target="_blank" rel="noopener noreferrer" style="display: inline-flex; align-items: center; gap: 6px; background: #0284c7; color: #ffffff; text-decoration: none; font-size: 12px; font-weight: 700; padding: 8px 16px; border-radius: 8px; box-shadow: 0 4px 10px rgba(2,132,199,0.35);">
+              <span>🌐 ${t('sheet_cctv_official_portal')}</span>
+              <span>↗</span>
+            </a>
+          ` : ''}
+        </div>
+        <div style="position: absolute; bottom: 8px; left: 8px; background: rgba(15, 23, 42, 0.75); backdrop-filter: blur(4px); color: #f8fafc; font-size: 10.5px; padding: 2px 8px; border-radius: 4px; display: flex; align-items: center; gap: 5px;">
+          <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: #22c55e;"></span>
+          <span>LIVE SNAPSHOT · ${isEn ? 'Updated:' : 'อัปเดตล่าสุด:'} ${localizeDateTime(cam.lastUpdate) || ''}</span>
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="gmaps-action-row" style="margin: 0 16px 12px 16px;">
+        <button class="gmaps-action-btn" id="btn-refresh-cctv" title="${t('sheet_cctv_refresh')}">
+          <span style="font-size: 15px; color: #1a73e8;">🔄</span>
+          <span>${t('sheet_cctv_refresh')}</span>
+        </button>
+        <button class="gmaps-action-btn" id="btn-focus-station" title="${t('sheet_zoom_point')}">
+          <span style="font-size: 15px; color: #1a73e8;">📍</span>
+          <span>${t('sheet_zoom_point')}</span>
+        </button>
+        ${cam.portalUrl ? `
+          <a class="gmaps-action-btn" href="${cam.portalUrl}" target="_blank" rel="noopener noreferrer" style="text-decoration: none;" title="${t('sheet_cctv_official_portal')}">
+            <span style="font-size: 15px; color: #1a73e8;">🌐</span>
+            <span>${isEn ? 'Official Portal' : 'เว็บทางการ'}</span>
+          </a>
+        ` : ''}
+      </div>
+
+      <!-- Details List -->
+      <div class="gmaps-details-list">
+        <div class="gmaps-detail-row">
+          <span class="gmaps-row-icon">📍</span>
+          <div class="gmaps-row-content">
+            <div class="gmaps-row-label">${t('sheet_cctv_route_label')}</div>
+            <div class="gmaps-row-value" style="color: #1e293b; font-weight: 600;">${cam.route || '-'} ${cam.km ? `(${cam.km})` : ''}</div>
+          </div>
+        </div>
+
+        <div class="gmaps-detail-row">
+          <span class="gmaps-row-icon">🏛️</span>
+          <div class="gmaps-row-content">
+            <div class="gmaps-row-label">${t('sheet_cctv_owner_label')}</div>
+            <div class="gmaps-row-value" style="color: #334155; font-weight: 600;">${agencyTitle}</div>
+          </div>
+        </div>
+
+        <div class="gmaps-detail-row">
+          <span class="gmaps-row-icon">🌐</span>
+          <div class="gmaps-row-content">
+            <div class="gmaps-row-label">${t('sheet_cctv_gps_label')}</div>
+            <div class="gmaps-row-value" style="color: #64748b; font-family: monospace;">${(cam.lat || 0).toFixed(4)}°N, ${(cam.lng || 0).toFixed(4)}°E</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Weather Section -->
+      ${renderWeatherSectionHtml(getProvinceName(cam))}
+    `;
+
+    attachEvents();
+
+    const refreshBtn = sheet.querySelector('#btn-refresh-cctv');
+    if (refreshBtn) {
+      refreshBtn.addEventListener('click', () => {
+        const img = sheet.querySelector('#cctv-live-img');
+        const loader = sheet.querySelector('.cctv-img-loader');
+        const fallback = sheet.querySelector('.cctv-img-offline');
+        if (img && cam.snapshotUrl) {
+          if (loader) loader.style.display = 'flex';
+          if (fallback) fallback.style.display = 'none';
+          img.style.display = 'block';
+          const base = cam.snapshotUrl.split('&_t=')[0].split('?_t=')[0];
+          const sep = base.includes('?') ? '&' : '?';
+          img.src = `${base}${sep}_t=${Date.now()}`;
+        }
+      });
+    }
+
+    loadSheetWeather(getProvinceName(cam), cam.lat, cam.lng);
+  }
+
+  // ==========================================
   // 2.5 DOH National Highway Flood Sheet (สายด่วน 1586)
   // ==========================================
   function renderDohRoadSheet() {
     const road = currentItem;
+    const isEn = getLanguage() === 'en';
     const isPassable = road.passable !== false;
     const color = isPassable ? '#ea580c' : '#dc2626';
     const bgBadge = isPassable ? '#fff7ed' : '#fef2f2';
@@ -573,27 +702,27 @@ export function createWaterStationList(stations, onStationSelect) {
       <div class="gmaps-sheet-header">
         <div style="flex: 1;">
           <h2 class="gmaps-place-title">🛣️ ${road.highwayNo} (${road.routeName})</h2>
-          <div class="gmaps-place-sub">${road.section || road.kmRange} · อ.${road.amphoe || ''} จ.${road.province} · ${road.agency || 'กรมทางหลวง'}</div>
+          <div class="gmaps-place-sub">${road.section || road.kmRange} · ${road.amphoe ? (isEn ? (road.amphoe_en || road.amphoe) : ('อ.' + road.amphoe)) : ''} ${localizeProvince(road)} · ${localizeAgency(road) || (isEn ? 'Department of Highways (DOH)' : 'กรมทางหลวง')}</div>
         </div>
-        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="ปิดแผงข้อมูล">✕</button>
+        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="${t('sheet_close')}">✕</button>
       </div>
 
       <div class="gmaps-status-banner" style="background: ${bgBadge}; color: ${color}; border: 1px solid ${borderBadge};">
         <div style="font-size: 22px;">${isPassable ? '⚠️' : '⛔'}</div>
         <div>
-          <div style="font-weight: 700; font-size: 14px;">${road.statusLabel || (isPassable ? 'ผ่านได้ด้วยความระมัดระวัง' : '⛔ การจราจรผ่านไม่ได้')}</div>
-          <div style="font-size: 11.5px; opacity: 0.95;">ระดับน้ำท่วมขัง: <b>${road.waterDepthCm} ซม.</b> · ${road.cause || 'น้ำหลากท่วมผิวทาง'}</div>
+          <div style="font-weight: 700; font-size: 14px;">${road.statusLabel || (isPassable ? (isEn ? 'Passable (Proceed with Caution)' : t('sheet_passable')) : (isEn ? 'Impassable (Closed to Traffic)' : t('sheet_impassable')))}</div>
+          <div style="font-size: 11.5px; opacity: 0.95;">${t('sheet_doh_depth_label')}: <b>${road.waterDepthCm} ${isEn ? 'cm' : 'ซม.'}</b> · ${road.cause || (isEn ? 'Surface flooding' : 'น้ำหลากท่วมผิวทาง')}</div>
         </div>
       </div>
 
       <div class="gmaps-action-row">
         <button class="gmaps-action-btn" id="btn-focus-station">
           <span style="font-size: 15px; color: #1a73e8;">📍</span>
-          <span>ซูมดูพิกัด</span>
+          <span>${t('sheet_zoom_point')}</span>
         </button>
         <a class="gmaps-action-btn" href="tel:1586" style="text-decoration: none;">
           <span style="font-size: 15px; color: #16a34a;">📞</span>
-          <span style="color: #16a34a; font-weight: 700;">สายด่วน 1586</span>
+          <span style="color: #16a34a; font-weight: 700;">${t('sheet_hotline_1586')}</span>
         </a>
       </div>
 
@@ -601,7 +730,7 @@ export function createWaterStationList(stations, onStationSelect) {
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">🛣️</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">สายทางและช่วงหลักกิโลเมตร</div>
+            <div class="gmaps-row-label">${t('sheet_doh_km_label')}</div>
             <div class="gmaps-row-value" style="color: #1e293b; font-weight: 600;">${road.highwayNo} ${road.routeName} (${road.kmRange})</div>
           </div>
         </div>
@@ -609,40 +738,40 @@ export function createWaterStationList(stations, onStationSelect) {
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">🌊</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">ระดับน้ำท่วมขังผิวทาง</div>
-            <div class="gmaps-row-value" style="color: ${color}; font-weight: 700; font-size: 14px;">${road.waterDepthCm} เซนติเมตร</div>
+            <div class="gmaps-row-label">${t('sheet_doh_depth_label')}</div>
+            <div class="gmaps-row-value" style="color: ${color}; font-weight: 700; font-size: 14px;">${road.waterDepthCm} ${isEn ? 'cm' : 'ซม.'}</div>
           </div>
         </div>
 
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">🔄</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">เส้นทางเลี่ยงแนะนำ (Detour)</div>
-            <div class="gmaps-row-value" style="color: #0284c7; font-weight: 600; line-height: 1.4;">${road.detour || 'ชะลอความเร็วและปฏิบัติตามป้ายเตือนของเจ้าหน้าที่แขวงทางหลวง'}</div>
+            <div class="gmaps-row-label">${t('sheet_doh_detour_label')}</div>
+            <div class="gmaps-row-value" style="color: #0284c7; font-weight: 600; line-height: 1.4;">${road.detour || (isEn ? 'Slow down and follow Highway District warning signs' : 'ชะลอความเร็วและปฏิบัติตามป้ายเตือนของเจ้าหน้าที่แขวงทางหลวง')}</div>
           </div>
         </div>
 
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">🏛️</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">หน่วยงานรับผิดชอบและดูแลพื้นที่</div>
-            <div class="gmaps-row-value">${road.agency || 'กรมทางหลวง (Department of Highways - DOH)'}</div>
+            <div class="gmaps-row-label">${t('sheet_doh_agency_label')}</div>
+            <div class="gmaps-row-value">${localizeAgency(road) || (isEn ? 'Department of Highways (DOH)' : 'กรมทางหลวง (Department of Highways - DOH)')}</div>
           </div>
         </div>
 
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">🕒</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">วันและเวลาตรวจวัดล่าสุด</div>
-            <div class="gmaps-row-value" style="color: #64748b;">${road.reportedTime || '29 ก.ย. 2026 01:00 น.'}</div>
+            <div class="gmaps-row-label">${t('sheet_last_telemetry')}</div>
+            <div class="gmaps-row-value" style="color: #64748b;">${localizeDateTime(road.reportedTime) || (isEn ? '29 Sep 2026 01:00' : '29 ก.ย. 2026 01:00 น.')}</div>
           </div>
         </div>
 
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">📞</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">ศูนย์บริหารงานอุบัติภัย กรมทางหลวง</div>
-            <div class="gmaps-row-value"><a href="tel:1586" style="color: #1a73e8; font-weight: 700; text-decoration: none;">โทร 1586 (โทรฟรีตลอด 24 ชม.)</a></div>
+            <div class="gmaps-row-label">${t('sheet_doh_emergency_center')}</div>
+            <div class="gmaps-row-value"><a href="tel:1586" style="color: #1a73e8; font-weight: 700; text-decoration: none;">${t('sheet_doh_tollfree')}</a></div>
           </div>
         </div>
       </div>
@@ -663,6 +792,7 @@ export function createWaterStationList(stations, onStationSelect) {
   // ==========================================
   function renderRoadSheet() {
     const road = currentItem;
+    const isEn = getLanguage() === 'en';
     const isCrit = road.riskLevel === 'critical';
     const color = isCrit ? '#dc2626' : '#ea580c';
     const bgBadge = isCrit ? '#fef2f2' : '#fffbeb';
@@ -672,32 +802,32 @@ export function createWaterStationList(stations, onStationSelect) {
       <div class="gmaps-sheet-header">
         <div style="flex: 1;">
           <h2 class="gmaps-place-title">🚗 ${road.road}</h2>
-          <div class="gmaps-place-sub">กทม. เขต ${road.district || 'กรุงเทพมหานคร'} · สำนักการระบายน้ำ</div>
+          <div class="gmaps-place-sub">${isEn ? `BMA District: ${road.district || 'Bangkok'} · Dept. of Drainage and Sewerage` : `กทม. เขต ${road.district || 'กรุงเทพมหานคร'} · สำนักการระบายน้ำ`}</div>
         </div>
-        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="ปิดแผงข้อมูล">✕</button>
+        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="${t('sheet_close')}">✕</button>
       </div>
 
       <div class="gmaps-status-banner" style="background: ${bgBadge}; color: ${color}; border: 1px solid ${borderBadge};">
         <div style="font-size: 22px;">🌊</div>
         <div>
-          <div style="font-weight: 700; font-size: 14px;">${road.warningBadge || (isCrit ? '🔴 น้ำท่วมขังวิกฤตบนผิวจราจร' : '🟠 เฝ้าระวังน้ำท่วมขัง')}</div>
-          <div style="font-size: 11.5px; opacity: 0.95;">ระดับน้ำท่วมขังผิวจราจร: <b>${road.waterDepthCm}</b> (${road.floodedLanes})</div>
+          <div style="font-weight: 700; font-size: 14px;">${road.warningBadge || (isCrit ? (isEn ? '🔴 Critical Waterlogging on Roadway' : '🔴 น้ำท่วมขังวิกฤตบนผิวจราจร') : (isEn ? '🟠 Waterlogging Watch' : '🟠 เฝ้าระวังน้ำท่วมขัง'))}</div>
+          <div style="font-size: 11.5px; opacity: 0.95;">${isEn ? 'Flood Depth on Roadway:' : 'ระดับน้ำท่วมขังผิวจราจร:'} <b>${road.waterDepthCm}</b> (${road.floodedLanes})</div>
         </div>
       </div>
 
       <div class="gmaps-action-row">
         <button class="gmaps-action-btn" id="btn-focus-station">
           <span style="font-size: 15px; color: #1a73e8;">📍</span>
-          <span>ซูมดูถนน</span>
+          <span>${t('sheet_zoom_road')}</span>
         </button>
         <button class="gmaps-action-btn" id="btn-view-weather">
           <span style="font-size: 15px; color: #1a73e8;">🌧️</span>
-          <span>พยากรณ์อากาศ</span>
+          <span>${t('sheet_weather_forecast')}</span>
         </button>
       </div>
 
       <div style="padding: 10px 16px; background: #f8fafc; border-bottom: 1px solid #e8eaed; font-size: 12px; color: #1e293b;">
-        <b>📍 ช่วงเส้นทางที่เฝ้าระวัง:</b><br/>
+        <b>${t('sheet_traffy_section_label')}</b><br/>
         <div style="margin-top: 3px; color: #475569; line-height: 1.4;">${road.segment}</div>
       </div>
 
@@ -705,23 +835,23 @@ export function createWaterStationList(stations, onStationSelect) {
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">🕒</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">วันและเวลาตรวจวัดล่าสุด</div>
-            <div class="gmaps-row-value" style="color: #dc2626; font-weight: 700;">${road.lastUpdated || '29 ก.ย. 2026 01:00 น.'}</div>
+            <div class="gmaps-row-label">${t('sheet_last_telemetry')}</div>
+            <div class="gmaps-row-value" style="color: #dc2626; font-weight: 700;">${localizeDateTime(road.lastUpdated) || (isEn ? '29 Sep 2026 01:00' : '29 ก.ย. 2026 01:00 น.')}</div>
           </div>
         </div>
 
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">📏</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">ระยะทางแนวเฝ้าระวัง</div>
-            <div class="gmaps-row-value">${road.lengthKm} กิโลเมตร</div>
+            <div class="gmaps-row-label">${t('sheet_traffy_distance_label')}</div>
+            <div class="gmaps-row-value">${road.lengthKm} ${isEn ? 'km' : 'กิโลเมตร'}</div>
           </div>
         </div>
 
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">🛣️</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">ช่องจราจรที่ได้รับผลกระทบ</div>
+            <div class="gmaps-row-label">${t('sheet_traffy_lanes_label')}</div>
             <div class="gmaps-row-value">${road.floodedLanes}</div>
           </div>
         </div>
@@ -729,7 +859,7 @@ export function createWaterStationList(stations, onStationSelect) {
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">⚠️</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">ผลกระทบการจราจร</div>
+            <div class="gmaps-row-label">${t('sheet_traffy_impact_label')}</div>
             <div class="gmaps-row-value" style="color: #b45309; line-height: 1.35;">${road.trafficImpact}</div>
           </div>
         </div>
@@ -737,16 +867,16 @@ export function createWaterStationList(stations, onStationSelect) {
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">💡</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">สาเหตุการระบายน้ำชะลอตัว</div>
+            <div class="gmaps-row-label">${t('sheet_traffy_cause_label')}</div>
             <div class="gmaps-row-value" style="color: #64748b; line-height: 1.35;">${road.cause}</div>
           </div>
         </div>
       </div>
 
       <div style="margin: 10px 16px; padding: 10px 12px; background: #fef2f2; border-radius: 8px; font-size: 11.5px; border: 1px dashed #fca5a5; display: flex; justify-content: space-between; align-items: center;">
-        <span style="color: #991b1b; font-weight: 600;">📞 สายด่วน กทม. 1555</span>
+        <span style="color: #991b1b; font-weight: 600;">${t('sheet_traffy_bma_hotline')}</span>
         <a href="https://line.me/R/ti/p/@traffyfondue" target="_blank" style="background: #16a34a; color: #fff; padding: 4px 10px; border-radius: 6px; text-decoration: none; font-weight: 700;">
-          💬 แจ้งผ่าน Traffy Fondue
+          ${t('sheet_traffy_report_btn')}
         </a>
       </div>
 
@@ -767,6 +897,7 @@ export function createWaterStationList(stations, onStationSelect) {
   // ==========================================
   function renderTraffySheet() {
     const item = currentItem;
+    const isEn = getLanguage() === 'en';
     const isDone = item.stateClass === 'finished' || (item.state && (item.state.includes('เสร็จ') || item.state.includes('แก้ไขแล้ว')));
     const badgeBg = isDone ? '#ecfdf5' : '#fffbeb';
     const badgeColor = isDone ? '#059669' : '#d97706';
@@ -776,50 +907,50 @@ export function createWaterStationList(stations, onStationSelect) {
     sheet.innerHTML = `
       <div class="gmaps-sheet-header">
         <div style="flex: 1;">
-          <h2 class="gmaps-place-title">🛣️ ${item.address || 'จุดน้ำท่วมขัง Traffy Fondue'}</h2>
-          <div class="gmaps-place-sub">รหัสแจ้งเหตุ #${item.ticket_id} · เขต ${item.district || 'กรุงเทพมหานคร'}</div>
+          <h2 class="gmaps-place-title">🛣️ ${item.address || (isEn ? 'Traffy Fondue Flood Incident' : 'จุดน้ำท่วมขัง Traffy Fondue')}</h2>
+          <div class="gmaps-place-sub">${isEn ? `Ticket #${item.ticket_id} · District: ${item.district || 'Bangkok'}` : `รหัสแจ้งเหตุ #${item.ticket_id} · เขต ${item.district || 'กรุงเทพมหานคร'}`}</div>
         </div>
-        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="ปิดแผงข้อมูล">✕</button>
+        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="${t('sheet_close')}">✕</button>
       </div>
 
       <div class="gmaps-status-banner" style="background: ${badgeBg}; color: ${badgeColor}; border: 1px solid ${badgeBorder};">
         <div style="font-size: 22px;">${badgeIcon}</div>
         <div>
-          <div style="font-weight: 700; font-size: 14px;">สถานะ: ${item.state || 'รับเรื่องแล้ว'}</div>
-          <div style="font-size: 11.5px; opacity: 0.95;">รายงานปัญหาผ่าน Traffy Fondue สวทช. / กทม.</div>
+          <div style="font-weight: 700; font-size: 14px;">${t('sheet_status_prefix')} ${item.state || t('sheet_traffy_ack')}</div>
+          <div style="font-size: 11.5px; opacity: 0.95;">${t('sheet_traffy_org')}</div>
         </div>
       </div>
 
       <div class="gmaps-action-row">
         <button class="gmaps-action-btn" id="btn-focus-station">
           <span style="font-size: 15px; color: #1a73e8;">📍</span>
-          <span>ซูมดูจุดเกิดเหตุ</span>
+          <span>${t('sheet_zoom_incident')}</span>
         </button>
         <button class="gmaps-action-btn" id="btn-view-weather">
           <span style="font-size: 15px; color: #1a73e8;">🌧️</span>
-          <span>พยากรณ์อากาศ</span>
+          <span>${t('sheet_weather_forecast')}</span>
         </button>
       </div>
 
       ${item.photo_url ? `
         <div style="padding: 12px 16px 4px 16px;">
-          <div style="font-size: 11.5px; font-weight: 700; color: #475569; margin-bottom: 6px;">📷 ภาพถ่ายจุดเกิดเหตุ</div>
+          <div style="font-size: 11.5px; font-weight: 700; color: #475569; margin-bottom: 6px;">📷 ${isEn ? 'Incident Photo' : 'ภาพถ่ายจุดเกิดเหตุ'}</div>
           <div style="border-radius: 10px; overflow: hidden; max-height: 220px; border: 1px solid #e2e8f0; background: #0f172a; text-align: center;">
-            <img src="${item.photo_url}" alt="ภาพถ่ายจุดน้ำท่วม" style="width: 100%; height: auto; max-height: 220px; object-fit: cover; display: block;" loading="lazy" />
+            <img src="${item.photo_url}" alt="Incident photo" style="width: 100%; height: auto; max-height: 220px; object-fit: cover; display: block;" loading="lazy" />
           </div>
         </div>
       ` : ''}
 
       <div style="padding: 10px 16px; background: #f8fafc; border-bottom: 1px solid #e8eaed; font-size: 12px; color: #1e293b;">
-        <b>📝 รายละเอียดเหตุการณ์:</b><br/>
-        <div style="margin-top: 4px; color: #334155; line-height: 1.45; font-size: 12.5px;">${item.description || 'ไม่มีรายละเอียดเพิ่มเติม'}</div>
+        <b>📝 ${isEn ? 'Incident Details:' : 'รายละเอียดเหตุการณ์:'}</b><br/>
+        <div style="margin-top: 4px; color: #334155; line-height: 1.45; font-size: 12.5px;">${item.description || (isEn ? 'No additional details provided' : 'ไม่มีรายละเอียดเพิ่มเติม')}</div>
       </div>
 
       <div class="gmaps-details-list">
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">📍</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">สถานที่ / จุดสังเกต</div>
+            <div class="gmaps-row-label">${isEn ? 'Location / Landmark' : 'สถานที่ / จุดสังเกต'}</div>
             <div class="gmaps-row-value">${item.address || '-'}</div>
           </div>
         </div>
@@ -827,26 +958,26 @@ export function createWaterStationList(stations, onStationSelect) {
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">🏛️</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">เขตพื้นที่รับผิดชอบ</div>
-            <div class="gmaps-row-value">${item.district || 'กรุงเทพมหานคร'}</div>
+            <div class="gmaps-row-label">${isEn ? 'Responsible District' : 'เขตพื้นที่รับผิดชอบ'}</div>
+            <div class="gmaps-row-value">${item.district || (isEn ? 'Bangkok' : 'กรุงเทพมหานคร')}</div>
           </div>
         </div>
 
         <div class="gmaps-detail-row">
           <span class="gmaps-row-icon">🕒</span>
           <div class="gmaps-row-content">
-            <div class="gmaps-row-label">เวลาที่แจ้งเหตุ</div>
-            <div class="gmaps-row-value" style="color: #64748b;">${item.formattedTime || item.timestamp || '-'}</div>
+            <div class="gmaps-row-label">${t('sheet_traffy_reported_time')}</div>
+            <div class="gmaps-row-value" style="color: #64748b;">${localizeDateTime(item.formattedTime || item.timestamp) || '-'}</div>
           </div>
         </div>
       </div>
 
       <div style="margin: 12px 16px; display: flex; gap: 8px;">
         <a href="${item.traffy_url || `https://share.traffy.in.th/teamchadchart/share?ticket_id=${item.ticket_id}`}" target="_blank" rel="noopener noreferrer" style="flex: 1; text-align: center; background: #0284c7; color: #fff; padding: 8px 12px; border-radius: 8px; text-decoration: none; font-size: 12px; font-weight: 600;">
-          ดูบน Traffy Fondue ↗
+          ${isEn ? 'View on Traffy Fondue ↗' : 'ดูบน Traffy Fondue ↗'}
         </a>
         <a href="${item.line_url || 'https://line.me/R/ti/p/@traffyfondue'}" target="_blank" rel="noopener noreferrer" style="flex: 1; text-align: center; background: #16a34a; color: #fff; padding: 8px 12px; border-radius: 8px; text-decoration: none; font-size: 12px; font-weight: 600;">
-          แจ้งเหตุเพิ่มเติม 💬
+          ${isEn ? 'Report More Incidents 💬' : 'แจ้งเหตุเพิ่มเติม 💬'}
         </a>
       </div>
 
@@ -867,44 +998,45 @@ export function createWaterStationList(stations, onStationSelect) {
   // ==========================================
   function renderUserLocationSheet() {
     const loc = currentItem;
+    const isEn = getLanguage() === 'en';
     const st = loc.nearestStation;
 
     sheet.innerHTML = `
       <div class="gmaps-sheet-header">
         <div style="flex: 1;">
-          <h2 class="gmaps-place-title">📍 ตำแหน่งปัจจุบันของคุณ</h2>
-          <div class="gmaps-place-sub">พิกัด ${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)} (±${Math.round(loc.accuracy || 15)} ม.)</div>
+          <h2 class="gmaps-place-title">📍 ${isEn ? 'Your Current Location' : 'ตำแหน่งปัจจุบันของคุณ'}</h2>
+          <div class="gmaps-place-sub">${isEn ? `GPS Coords ${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)} (±${Math.round(loc.accuracy || 15)} m)` : `พิกัด ${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)} (±${Math.round(loc.accuracy || 15)} ม.)`}</div>
         </div>
-        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="ปิดแผงข้อมูล">✕</button>
+        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="${t('sheet_close')}">✕</button>
       </div>
 
       <div class="gmaps-status-banner" style="background: #e0f2fe; color: #0369a1; border: 1px solid #bae6fd;">
         <div style="font-size: 22px;">🎯</div>
         <div>
-          <div style="font-weight: 700; font-size: 14px;">ตรวจจับพิกัด GPS สำเร็จ</div>
-          <div style="font-size: 11.5px; opacity: 0.9;">ประเมินความเสี่ยงน้ำท่วมจากสถานีโทรมาตรและข้อมูลพื้นที่รอบตัว</div>
+          <div style="font-weight: 700; font-size: 14px;">${isEn ? 'GPS Location Acquired' : 'ตรวจจับพิกัด GPS สำเร็จ'}</div>
+          <div style="font-size: 11.5px; opacity: 0.9;">${isEn ? 'Flood risk evaluated from nearby telemetry stations and local terrain' : 'ประเมินความเสี่ยงน้ำท่วมจากสถานีโทรมาตรและข้อมูลพื้นที่รอบตัว'}</div>
         </div>
       </div>
 
       <div class="gmaps-action-row">
         <button class="gmaps-action-btn" id="btn-focus-station">
           <span style="font-size: 15px; color: #1a73e8;">📍</span>
-          <span>ซูมดูตำแหน่งฉัน</span>
+          <span>${isEn ? 'Focus My Location' : 'ซูมดูตำแหน่งฉัน'}</span>
         </button>
         <button class="gmaps-action-btn" id="btn-view-weather">
           <span style="font-size: 15px; color: #1a73e8;">🌧️</span>
-          <span>พยากรณ์อากาศ</span>
+          <span>${t('sheet_weather_forecast')}</span>
         </button>
       </div>
 
       ${st ? `
         <div style="margin: 12px 16px; padding: 10px 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
-          <div style="font-size: 11px; color: #64748b; font-weight: 600; margin-bottom: 2px;">📡 สถานีโทรมาตรวัดน้ำใกล้คุณที่สุด (~${(loc.minKm ?? 0).toFixed(1)} กม.):</div>
-          <div style="font-size: 13.5px; font-weight: 700; color: #1e293b;">${st.name}</div>
+          <div style="font-size: 11px; color: #64748b; font-weight: 600; margin-bottom: 2px;">${isEn ? `📡 Nearest Water Telemetry Station (~${(loc.minKm ?? 0).toFixed(1)} km):` : `📡 สถานีโทรมาตรวัดน้ำใกล้คุณที่สุด (~${(loc.minKm ?? 0).toFixed(1)} กม.):`}</div>
+          <div style="font-size: 13.5px; font-weight: 700; color: #1e293b;">${localizeName(st)}</div>
           <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 12px;">
-            <span>ระดับน้ำ: <b style="color: ${st.isOverflow ? '#d93025' : '#16a34a'}; font-size: 14px;">${st.currentLevel.toFixed(2)} ม. (รทก.)</b></span>
+            <span>${isEn ? 'Water Level:' : 'ระดับน้ำ:'} <b style="color: ${st.isOverflow ? '#d93025' : '#16a34a'}; font-size: 14px;">${st.currentLevel.toFixed(2)} ${isEn ? 'm MSL' : 'ม. (รทก.)'}</b></span>
             <span style="font-size: 11px; background: ${st.isOverflow ? '#fee2e2' : '#dcfce7'}; color: ${st.isOverflow ? '#991b1b' : '#15803d'}; padding: 2px 7px; border-radius: 12px; font-weight: 700;">
-              ${st.diffDisplay || 'ปกติ'}
+              ${st.diffDisplay || (isEn ? 'Normal' : 'ปกติ')}
             </span>
           </div>
         </div>
@@ -923,31 +1055,111 @@ export function createWaterStationList(stations, onStationSelect) {
   }
 
   // ==========================================
-  // 5. Generic Feature Sheet (Elevation, NWP, Flood Extent)
+  // 5.1 DMR Geology 1:250,000 Sheet
+  // ==========================================
+  function renderGeologySheet() {
+    const item = currentItem;
+    const isEn = getLanguage() === 'en';
+    const title = item.title || (isEn ? 'DMR Geology (1:250k)' : 'ข้อมูลธรณีวิทยา (DMR 1:250k)');
+    const category = isEn ? 'Bedrock & Geology (DMR 1:250k)' : (item.category || 'ธรณีวิทยาและหินฐาน (DMR 1:250k)');
+    const coordsStr = item.lat && item.lng 
+      ? (isEn ? `Coords ${item.lat.toFixed(4)}, ${item.lng.toFixed(4)}` : `พิกัด ${item.lat.toFixed(4)}, ${item.lng.toFixed(4)}`)
+      : (isEn ? 'Selected Coordinate' : 'พิกัดที่เลือก');
+    const sourceStr = isEn ? 'Department of Mineral Resources (DMR)' : 'กรมทรัพยากรธรณี กระทรวงทรัพยากรธรรมชาติและสิ่งแวดล้อม';
+
+    const details = Array.isArray(item.details) ? item.details : [];
+
+    sheet.innerHTML = `
+      <div class="gmaps-sheet-header">
+        <div style="flex: 1;">
+          <h2 class="gmaps-place-title">🪨 ${title}</h2>
+          <div class="gmaps-place-sub">${sourceStr} · ${coordsStr}</div>
+        </div>
+        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="${t('sheet_close')}">✕</button>
+      </div>
+
+      <div class="gmaps-status-banner" style="background: #faf5ff; color: #6b21a8; border: 1px solid #e9d5ff;">
+        <div style="font-size: 20px;">🪨</div>
+        <div>
+          <div style="font-weight: 700; font-size: 13.5px;">${category}</div>
+          <div style="font-size: 11px; color: #7e22ce;">
+            ${isEn ? 'Geological map scale 1:250,000 (Department of Mineral Resources, Thailand)' : 'แผนที่ธรณีวิทยามาตราส่วน 1:250,000 แสดงหน่วยหินและโครงสร้างหินฐาน'}
+          </div>
+        </div>
+      </div>
+
+      <div class="gmaps-action-row">
+        <button class="gmaps-action-btn" id="btn-focus-station">
+          <span style="font-size: 15px; color: #7e22ce;">📍</span>
+          <span>${t('sheet_zoom_point')}</span>
+        </button>
+      </div>
+
+      <div style="padding: 12px 16px;">
+        <div style="font-weight: 700; font-size: 12.5px; color: #1e293b; margin-bottom: 8px; display: flex; align-items: center; gap: 5px;">
+          <span>📋</span>
+          <span>${isEn ? 'Rock Unit Attributes:' : 'ข้อมูลจำเพาะของหน่วยหิน:'}</span>
+        </div>
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+          ${details.map((d, idx) => `
+            <div style="display: flex; padding: 10px 12px; font-size: 12px; border-bottom: ${idx === details.length - 1 ? 'none' : '1px solid #f1f5f9'}; background: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+              <span style="width: 140px; color: #64748b; font-weight: 600; flex-shrink: 0;">${isEn ? (d.labelEn || d.label) : d.label}</span>
+              <span style="color: #1e293b; font-weight: 600; word-break: break-word;">${d.value || '-'}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      ${item.province ? renderWeatherSectionHtml(item.province) : ''}
+    `;
+
+    attachEvents();
+    if (item.province) {
+      loadSheetWeather(item.province, item.lat, item.lng);
+    }
+  }
+
+  // ==========================================
+  // 5.2 Generic Feature Sheet (Elevation, NWP, Flood Extent)
   // ==========================================
   function renderGenericSheet() {
     const item = currentItem;
-    const title = item.name || (item.isElevation ? `ระดับความสูง ${item.elevation} ม.` : 'ข้อมูลพื้นที่');
-    const desc = item.desc || item.recommendation || item.severityLabel || 'ข้อมูลการตรวจวัด';
+    const isEn = getLanguage() === 'en';
+    const title = item.name || item.title || (item.isElevation ? (isEn ? `Elevation ${item.elevation} m` : `ระดับความสูง ${item.elevation} ม.`) : (isEn ? 'Area Details' : 'ข้อมูลพื้นที่'));
+    const desc = item.desc || item.category || item.recommendation || item.severityLabel || (isEn ? 'Measurement Telemetry' : 'ข้อมูลการตรวจวัด');
 
     const prov = item.province || 'กรุงเทพมหานคร';
+    const details = Array.isArray(item.details) ? item.details : [];
 
     sheet.innerHTML = `
       <div class="gmaps-sheet-header">
         <div style="flex: 1;">
           <h2 class="gmaps-place-title">${item.icon || '📌'} ${title}</h2>
-          <div class="gmaps-place-sub">พิกัด ${item.lat ? item.lat.toFixed(4) + ', ' + item.lng.toFixed(4) : 'จุดที่เลือก'}</div>
+          <div class="gmaps-place-sub">${isEn ? `Coords ${item.lat ? item.lat.toFixed(4) + ', ' + item.lng.toFixed(4) : 'Selected Point'}` : `พิกัด ${item.lat ? item.lat.toFixed(4) + ', ' + item.lng.toFixed(4) : 'จุดที่เลือก'}`}</div>
         </div>
-        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="ปิดแผงข้อมูล">✕</button>
+        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="${t('sheet_close')}">✕</button>
       </div>
 
       <div class="gmaps-status-banner" style="background: #f1f5f9; color: #1e293b; border: 1px solid #cbd5e1;">
         <div style="font-size: 20px;">ℹ️</div>
         <div>
           <div style="font-weight: 700; font-size: 13.5px;">${desc}</div>
-          <div style="font-size: 11px; color: #64748b;">${item.riskTag || item.displayDate || 'ระบบอุทกวิทยา'}</div>
+          <div style="font-size: 11px; color: #64748b;">${item.riskTag || item.displayDate || (isEn ? 'Geographic Information' : 'ระบบภูมิสารสนเทศ')}</div>
         </div>
       </div>
+
+      ${details.length > 0 ? `
+        <div style="padding: 12px 16px;">
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden;">
+            ${details.map((d, idx) => `
+              <div style="display: flex; padding: 10px 12px; font-size: 12px; border-bottom: ${idx === details.length - 1 ? 'none' : '1px solid #f1f5f9'}; background: ${idx % 2 === 0 ? '#ffffff' : '#f8fafc'};">
+                <span style="width: 140px; color: #64748b; font-weight: 600; flex-shrink: 0;">${isEn ? (d.labelEn || d.label) : d.label}</span>
+                <span style="color: #1e293b; font-weight: 600; word-break: break-word;">${d.value || '-'}</span>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
 
       <!-- Multi-Layer Companion Cards -->
       ${renderCompanionLayerCards(item.lat, item.lng, prov)}
@@ -966,18 +1178,20 @@ export function createWaterStationList(stations, onStationSelect) {
   // ("หากกด weather pill ให้แสดงเฉพาะพยากรณ์อากาศ")
   // ==========================================
   function renderDedicatedWeatherSheet() {
+    const isEn = getLanguage() === 'en';
     const prov = currentItem.province || 'กรุงเทพมหานคร';
+    const localizedProv = isEn ? (THAI_PROVINCE_EN_MAP[prov] || prov) : prov;
 
     sheet.innerHTML = `
       <div class="gmaps-sheet-header">
         <div style="flex: 1;">
           <div style="display: flex; align-items: center; gap: 6px;">
             <span style="font-size: 20px;">🌤️</span>
-            <h2 class="gmaps-place-title">พยากรณ์อากาศ จ.${prov}</h2>
+            <h2 class="gmaps-place-title">${isEn ? `Weather Forecast: ${localizedProv}` : `พยากรณ์อากาศ จ.${prov}`}</h2>
           </div>
-          <div class="gmaps-place-sub">ศูนย์อุตุนิยมวิทยา กรมอุตุนิยมวิทยา (TMD HPC) & ECMWF</div>
+          <div class="gmaps-place-sub">${isEn ? 'Thai Meteorological Department (TMD HPC) & ECMWF' : 'ศูนย์อุตุนิยมวิทยา กรมอุตุนิยมวิทยา (TMD HPC) & ECMWF'}</div>
         </div>
-        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="ปิดแผงข้อมูล">✕</button>
+        <button class="gmaps-sheet-close" id="btn-gmaps-close" title="${t('sheet_close')}">✕</button>
       </div>
 
       <!-- Live Condition Banner -->
@@ -985,28 +1199,28 @@ export function createWaterStationList(stations, onStationSelect) {
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <div>
             <div id="dedicated-weather-temp" style="font-size: 32px; font-weight: 800; color: #0369a1; line-height: 1;">--°C</div>
-            <div id="dedicated-weather-desc" style="font-size: 13px; font-weight: 600; color: #0284c7; margin-top: 4px;">กำลังโหลดสภาพอากาศ...</div>
+            <div id="dedicated-weather-desc" style="font-size: 13px; font-weight: 600; color: #0284c7; margin-top: 4px;">${t('weather_pill_loading')}</div>
           </div>
           <div id="dedicated-weather-icon" style="font-size: 38px;">🌤️</div>
         </div>
         <div id="dedicated-weather-metrics" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(2, 132, 199, 0.2); font-size: 11.5px; color: #0c4a6e;">
-          <div>🌧️ โอกาสเกิดฝน: <b id="dedicated-rain-prob">--%</b></div>
-          <div>💧 ความชื้นสัมพัทธ์: <b id="dedicated-humidity">--%</b></div>
-          <div>💨 ความเร็วลม: <b id="dedicated-wind">-- กม./ชม.</b></div>
-          <div>☔ ปริมาณฝนสด: <b id="dedicated-rain-mm">-- มม.</b></div>
+          <div>🌧️ ${isEn ? 'Rain Probability:' : 'โอกาสเกิดฝน:'} <b id="dedicated-rain-prob">--%</b></div>
+          <div>💧 ${isEn ? 'Humidity:' : 'ความชื้นสัมพัทธ์:'} <b id="dedicated-humidity">--%</b></div>
+          <div>💨 ${isEn ? 'Wind Speed:' : 'ความเร็วลม:'} <b id="dedicated-wind">-- ${isEn ? 'km/h' : 'กม./ชม.'}</b></div>
+          <div>☔ ${isEn ? 'Live Rain:' : 'ปริมาณฝนสด:'} <b id="dedicated-rain-mm">-- ${isEn ? 'mm' : 'มม.'}</b></div>
         </div>
       </div>
 
       <!-- 7-Day Detailed Breakdown Section -->
       <div style="padding: 12px 16px; border-top: 1px solid #e8eaed;" id="gmaps-weather-section">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-          <span style="font-weight: 700; font-size: 13.5px; color: #1e293b;">📅 พยากรณ์ฝนและสภาพอากาศ 7 วันข้างหน้า</span>
+          <span style="font-weight: 700; font-size: 13.5px; color: #1e293b;">📅 ${isEn ? '7-Day Precipitation & Weather Forecast' : 'พยากรณ์ฝนและสภาพอากาศ 7 วันข้างหน้า'}</span>
           <span style="background: #e6f4ea; color: #137333; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 10px; border: 1px solid #b7eb8f;">
             🇹🇭 TMD Official
           </span>
         </div>
         <div id="gmaps-forecast-container" style="display: flex; flex-direction: column; gap: 6px;">
-          <div style="color: #70757a; font-size: 12px;">กำลังดึงข้อมูลพยากรณ์อากาศสด...</div>
+          <div style="color: #70757a; font-size: 12px;">${isEn ? 'Fetching live weather forecast...' : 'กำลังดึงข้อมูลพยากรณ์อากาศสด...'}</div>
         </div>
       </div>
     `;
@@ -1020,6 +1234,7 @@ export function createWaterStationList(stations, onStationSelect) {
   // ("หากเปิดหลายเลเยอร์ให้แสดงข้อมูลต่อกัน")
   // ==========================================
   function renderCompanionLayerCards(lat, lng, province) {
+    const isEn = getLanguage() === 'en';
     const layers = getActiveLayers();
     const cards = [];
 
@@ -1029,15 +1244,15 @@ export function createWaterStationList(stations, onStationSelect) {
         <div class="gmaps-companion-card" style="margin: 8px 16px; padding: 10px 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; font-size: 12px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
             <span style="font-weight: 700; color: #15803d; display: flex; align-items: center; gap: 5px;">
-              <span>📡</span> เรดาร์ตรวจวัดกลุ่มฝนสด (TMD / RainViewer)
+              <span>📡</span> ${t('layer_sat_water')}
             </span>
-            <span style="font-size: 10px; background: #dcfce7; color: #166534; font-weight: 700; padding: 1px 6px; border-radius: 8px;">เรดาร์เปิดอยู่</span>
+            <span style="font-size: 10px; background: #dcfce7; color: #166534; font-weight: 700; padding: 1px 6px; border-radius: 8px;">${isEn ? 'Active' : 'เรดาร์เปิดอยู่'}</span>
           </div>
           <div style="color: #166534; font-size: 11px;">
-            ${window.__latestRadarTime ? `🕒 ตรวจวัดเรดาร์ล่าสุด: <b>${window.__latestRadarTime}</b>` : '🕒 รอบตรวจวัดเรดาร์: สดทุก 10 นาที (สถานีเรดาร์ทั่วไทย)'}
+            ${window.__latestRadarTime ? `${t('legend_ts_radar_prefix')} <b>${localizeDateTime(window.__latestRadarTime)}</b>` : (isEn ? '🕒 Scan Interval: Every 10 min (TMD Radar)' : '🕒 รอบตรวจวัดเรดาร์: สดทุก 10 นาที (สถานีเรดาร์ทั่วไทย)')}
           </div>
           <div style="color: #4b5563; font-size: 11px; margin-top: 3px;">
-            ตรวจจับละอองน้ำฝนจริงที่ตกสู่พื้นดินในรัศมี 240 กม. ความแม่นยำสูง
+            ${t('sheet_radar_desc')}
           </div>
         </div>
       `);
@@ -1049,41 +1264,18 @@ export function createWaterStationList(stations, onStationSelect) {
         <div class="gmaps-companion-card" style="margin: 8px 16px; padding: 10px 12px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; font-size: 12px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
             <span style="font-weight: 700; color: #1d4ed8; display: flex; align-items: center; gap: 5px;">
-              <span>☁️</span> ดาวเทียมกลุ่มเมฆ (Himawari-9 Clean IR)
+              <span>☁️</span> ${t('layer_sat_clouds')}
             </span>
-            <span style="font-size: 10px; background: #dbeafe; color: #1e40af; font-weight: 700; padding: 1px 6px; border-radius: 8px;">ดาวเทียมเปิดอยู่</span>
+            <span style="font-size: 10px; background: #dbeafe; color: #1e40af; font-weight: 700; padding: 1px 6px; border-radius: 8px;">${isEn ? 'Active' : 'ดาวเทียมเปิดอยู่'}</span>
           </div>
           <div style="color: #1e40af; font-size: 11px;">
-            ${window.__latestCloudTime ? `🕒 ภาพดาวเทียมล่าสุด: <b>${window.__latestCloudTime}</b>` : '🕒 รอบดาวเทียม: ทุก 10 นาที (NASA GIBS / JMA)'}
+            ${window.__latestCloudTime ? `${t('legend_ts_clouds_prefix')} <b>${localizeDateTime(window.__latestCloudTime)}</b>` : (isEn ? '🕒 Satellite Scan: Every 10 min (NASA GIBS / JMA)' : '🕒 รอบดาวเทียม: ทุก 10 นาที (NASA GIBS / JMA)')}
           </div>
           <div style="color: #4b5563; font-size: 11px; margin-top: 3px;">
-            เซนเซอร์อินฟราเรดตรวจจับยอดเมฆความเย็นจัดและกลุ่มเมฆฝนฟ้าคะนอง
+            ${isEn ? 'Clean IR infrared sensors detecting convective cloud tops and severe rain clusters' : 'เซนเซอร์อินฟราเรดตรวจจับยอดเมฆความเย็นจัดและกลุ่มเมฆฝนฟ้าคะนอง'}
           </div>
         </div>
       `);
-    }
-
-    // 3. BMA Road Flood Layer (only if within 5 km of any flooded road corridor)
-    if (layers.bmaRoads && !currentItem.isRoad) {
-      const distToRoads = getMinDistanceToBMARoads(lat, lng);
-      if (distToRoads <= 5.0) {
-        cards.push(`
-          <div class="gmaps-companion-card" style="margin: 8px 16px; padding: 10px 12px; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; font-size: 12px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
-              <span style="font-weight: 700; color: #b91c1c; display: flex; align-items: center; gap: 5px;">
-                <span>🚗</span> เส้นทางน้ำท่วมถนน กทม. (ใกล้พิกัด ${distToRoads.toFixed(1)} กม.)
-              </span>
-              <span style="font-size: 10px; background: #fee2e2; color: #991b1b; font-weight: 700; padding: 1px 6px; border-radius: 8px;">ในรัศมี 5 กม.</span>
-            </div>
-            <div style="color: #991b1b; font-size: 11px;">
-              🕒 อัปเดตล่าสุด: <b>29 ก.ย. 2026 01:00 น.</b> (สำนักการระบายน้ำ กทม.)
-            </div>
-            <div style="color: #4b5563; font-size: 11px; margin-top: 3px;">
-              พบแนวถนนเฝ้าระวังน้ำท่วมขังบนผิวจราจรในรัศมี 5 กม. รถเล็กควรระมัดระวัง
-            </div>
-          </div>
-        `);
-      }
     }
 
     // 4. DMR Geology Layer
@@ -1092,12 +1284,12 @@ export function createWaterStationList(stations, onStationSelect) {
         <div class="gmaps-companion-card" id="st-sheet-geol-card" style="margin: 8px 16px; padding: 10px 12px; background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 8px; font-size: 12px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px;">
             <span style="font-weight: 700; color: #7e22ce; display: flex; align-items: center; gap: 5px;">
-              <span>🪨</span> หน่วยหินทางธรณีวิทยา (DMR 1:250k)
+              <span>🪨</span> ${t('layer_geology')}
             </span>
-            <span style="font-size: 10px; background: #f3e8ff; color: #7e22ce; font-weight: 700; padding: 1px 6px; border-radius: 8px;">ธรณีวิทยาเปิดอยู่</span>
+            <span style="font-size: 10px; background: #f3e8ff; color: #7e22ce; font-weight: 700; padding: 1px 6px; border-radius: 8px;">${isEn ? 'Active' : 'ธรณีวิทยาเปิดอยู่'}</span>
           </div>
           <div id="st-sheet-geol-val" style="color: #6b21a8; font-size: 11.5px;">
-            กำลังสืบค้นข้อมูลหน่วยหิน กรมทรัพยากรธรณี...
+            ${t('sheet_bedrock_inspecting')}
           </div>
         </div>
       `);
@@ -1109,12 +1301,12 @@ export function createWaterStationList(stations, onStationSelect) {
         <div class="gmaps-companion-card" style="margin: 8px 16px; padding: 10px 12px; background: #f0fdf4; border: 1px solid #dcfce7; border-radius: 8px; font-size: 12px;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <span style="font-weight: 700; color: #166534; display: flex; align-items: center; gap: 5px;">
-              <span>🚦</span> สภาพการจราจรสด (Traffic Flow)
+              <span>🚦</span> ${t('layer_traffic')}
             </span>
-            <span style="font-size: 10px; background: #dcfce7; color: #166534; font-weight: 700; padding: 1px 6px; border-radius: 8px;">เปิดอยู่</span>
+            <span style="font-size: 10px; background: #dcfce7; color: #166534; font-weight: 700; padding: 1px 6px; border-radius: 8px;">${isEn ? 'Active' : 'เปิดอยู่'}</span>
           </div>
           <div style="color: #4b5563; font-size: 11px; margin-top: 3px;">
-            แสดงความหนาแน่นของการจราจรสดบนเส้นทางรอบจุดนี้ (ซูมระดับ 13+ ขึ้นไป)
+            ${isEn ? 'Displays real-time live traffic congestion on major road networks (zoom 13+)' : 'แสดงความหนาแน่นของการจราจรสดบนเส้นทางรอบจุดนี้ (ซูมระดับ 13+ ขึ้นไป)'}
           </div>
         </div>
       `);
@@ -1125,7 +1317,7 @@ export function createWaterStationList(stations, onStationSelect) {
     return `
       <div style="padding: 6px 16px 2px 16px;">
         <div style="font-size: 11.5px; font-weight: 700; color: #475569; display: flex; align-items: center; gap: 4px;">
-          <span>📑</span> ข้อมูลเลเยอร์ที่เปิดใช้งานร่วมกัน (${cards.length} เลเยอร์):
+          <span>📑</span> ${isEn ? `Active Companion Layers (${cards.length}):` : `ข้อมูลเลเยอร์ที่เปิดใช้งานร่วมกัน (${cards.length} เลเยอร์):`}
         </div>
       </div>
       ${cards.join('')}
@@ -1137,21 +1329,22 @@ export function createWaterStationList(stations, onStationSelect) {
   // ("พร้อมสภาพอากาศและพยากรณ์อากาศ")
   // ==========================================
   function renderWeatherSectionHtml(province) {
+    const isEn = getLanguage() === 'en';
     return `
       <div style="padding: 12px 16px; border-top: 1px solid #e8eaed;" id="gmaps-weather-section">
         <div id="gmaps-weather-title" style="font-weight: 700; font-size: 13px; color: #202124; margin-bottom: 8px;">
           <div style="display: flex; align-items: center; justify-content: space-between;">
-            <span>🌧️ สภาพอากาศและพยากรณ์ฝน 7 วันข้างหน้า</span>
+            <span>🌧️ ${t('sheet_weather_7d_title')}</span>
             <span style="background: #e6f4ea; color: #137333; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 12px; border: 1px solid #ceead6;">
               🇹🇭 TMD Official
             </span>
           </div>
           <div style="font-size: 11px; color: #5f6368; font-weight: normal; margin-top: 2px;">
-            แหล่งข้อมูล: กรมอุตุนิยมวิทยา (High Performance Computing)
+            ${isEn ? 'Data Source: Thai Meteorological Department & Open-Meteo Multi-Model' : 'แหล่งข้อมูล: กรมอุตุนิยมวิทยา (High Performance Computing)'}
           </div>
         </div>
         <div id="gmaps-forecast-container" style="display: flex; flex-direction: column; gap: 4px;">
-          <div style="color: #70757a; font-size: 12px;">กำลังดึงข้อมูลพยากรณ์อากาศสด...</div>
+          <div style="color: #70757a; font-size: 12px;">${t('sheet_weather_loading')}</div>
         </div>
       </div>
     `;
@@ -1202,6 +1395,7 @@ export function createWaterStationList(stations, onStationSelect) {
   async function loadSheetWeather(province, lat, lng) {
     const container = sheet.querySelector('#gmaps-forecast-container');
     if (!container) return;
+    const isEn = getLanguage() === 'en';
 
     try {
       const weather = await fetch7DayWeatherForecast(province, lat, lng, province);
@@ -1210,21 +1404,22 @@ export function createWaterStationList(stations, onStationSelect) {
         .slice(0, 6)
         .map((d) => `
           <div style="display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; background: #f8f9fa; border-radius: 6px; font-size: 12px;">
-            <span style="font-weight: 600; width: 75px;">${d.displayDate}</span>
+            <span style="font-weight: 600; width: 75px;">${isEn ? (d.displayDateEn || d.displayDate) : d.displayDate}</span>
             <span style="font-size: 16px;">${d.icon}</span>
             <span style="color: #5f6368;">${d.tempMax}° / ${d.tempMin}°</span>
             <span style="font-weight: 600; color: ${d.rainMm > 40 ? '#d93025' : (d.rainMm > 20 ? '#ea580c' : '#188038')};">
-              🌧️ ${d.rainMm} มม.
+              🌧️ ${d.rainMm} ${isEn ? 'mm' : 'มม.'}
             </span>
           </div>
         `)
         .join('');
     } catch (err) {
-      container.innerHTML = `<div style="font-size: 11.5px; color: #64748b;">ไม่สามารถโหลดพยากรณ์อากาศได้ในขณะนี้</div>`;
+      container.innerHTML = `<div style="font-size: 11.5px; color: #64748b;">${isEn ? 'Unable to load weather forecast' : 'ไม่สามารถโหลดพยากรณ์อากาศได้ในขณะนี้'}</div>`;
     }
   }
 
   async function loadDedicatedWeather(province, lat, lng) {
+    const isEn = getLanguage() === 'en';
     const tempEl = sheet.querySelector('#dedicated-weather-temp');
     const descEl = sheet.querySelector('#dedicated-weather-desc');
     const iconEl = sheet.querySelector('#dedicated-weather-icon');
@@ -1242,37 +1437,37 @@ export function createWaterStationList(stations, onStationSelect) {
 
       if (curr) {
         if (tempEl) tempEl.textContent = `${curr.temp}°C`;
-        if (descEl) descEl.textContent = curr.weatherDesc;
+        if (descEl) descEl.textContent = isEn ? (curr.weatherDescEn || curr.weatherDesc) : curr.weatherDesc;
         if (iconEl) iconEl.textContent = curr.icon;
         if (rainProbEl) rainProbEl.textContent = `${curr.rainProb}%`;
         if (humEl) humEl.textContent = `${curr.humidity}%`;
-        if (windEl) windEl.textContent = `14 กม./ชม.`;
-        if (rainMmEl) rainMmEl.textContent = `${curr.rainMm} มม.`;
+        if (windEl) windEl.textContent = isEn ? `14 km/h` : `14 กม./ชม.`;
+        if (rainMmEl) rainMmEl.textContent = `${curr.rainMm} ${isEn ? 'mm' : 'มม.'}`;
       } else {
         if (tempEl) tempEl.textContent = `-`;
-        if (descEl) descEl.textContent = `ไม่พบข้อมูลสด`;
+        if (descEl) descEl.textContent = isEn ? `No live data` : `ไม่พบข้อมูลสด`;
       }
 
       if (container && forecast && forecast.days) {
         container.innerHTML = forecast.days
           .map((d) => `
             <div style="display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; background: #f8fafc; border-radius: 8px; border: 1px solid #f1f5f9; font-size: 12.5px;">
-              <span style="font-weight: 600; width: 85px; color: #1e293b;">${d.displayDate}</span>
+              <span style="font-weight: 600; width: 85px; color: #1e293b;">${isEn ? (d.displayDateEn || d.displayDate) : d.displayDate}</span>
               <span style="font-size: 18px;">${d.icon}</span>
-              <span style="font-size: 11.5px; color: #475569; width: 85px; text-align: center;">${d.weatherDesc}</span>
+              <span style="font-size: 11.5px; color: #475569; width: 85px; text-align: center;">${isEn ? (d.weatherDescEn || d.weatherDesc) : d.weatherDesc}</span>
               <span style="color: #64748b; font-size: 11.5px;">${d.tempMax}° / ${d.tempMin}°</span>
               <span style="font-weight: 700; color: ${d.rainMm > 40 ? '#dc2626' : (d.rainMm > 20 ? '#ea580c' : '#16a34a')}; width: 68px; text-align: right;">
-                🌧️ ${d.rainMm} มม.
+                🌧️ ${d.rainMm} ${isEn ? 'mm' : 'มม.'}
               </span>
             </div>
           `)
           .join('');
       } else if (container) {
-        container.innerHTML = `<div style="font-size: 12px; color: #64748b; text-align: center; padding: 12px;">ไม่สามารถโหลดข้อมูลพยากรณ์อากาศได้ในขณะนี้</div>`;
+        container.innerHTML = `<div style="font-size: 12px; color: #64748b; text-align: center; padding: 12px;">${isEn ? 'Unable to load weather forecast' : 'ไม่สามารถโหลดข้อมูลพยากรณ์อากาศได้ในขณะนี้'}</div>`;
       }
     } catch (err) {
       if (container) {
-        container.innerHTML = `<div style="font-size: 12px; color: #64748b;">ไม่สามารถโหลดพยากรณ์อากาศได้</div>`;
+        container.innerHTML = `<div style="font-size: 12px; color: #64748b;">${isEn ? 'Unable to load weather forecast' : 'ไม่สามารถโหลดพยากรณ์อากาศได้'}</div>`;
       }
     }
   }
@@ -1309,6 +1504,13 @@ export function createWaterStationList(stations, onStationSelect) {
   sheet.addEventListener('touchend', (e) => e.stopPropagation(), { passive: true });
   sheet.addEventListener('pointerdown', (e) => e.stopPropagation());
   sheet.addEventListener('pointermove', (e) => e.stopPropagation());
+
+  // Reactive language change listener
+  window.addEventListener('thaiflood:language-changed', () => {
+    if (isVisible && currentItem) {
+      render();
+    }
+  });
 
   render();
 
@@ -1354,8 +1556,26 @@ export function createWaterStationList(stations, onStationSelect) {
       sheet.classList.add('open');
       isVisible = true;
     },
+    updateStations: (newStations) => {
+      stations = newStations || [];
+      if (!currentItem || Object.keys(currentItem).length === 0) {
+        currentItem = stations.find((s) => s.status === 'critical') || stations[0] || {};
+      }
+    },
     selectGeneric: (item) => {
       currentItem = item;
+      render();
+      sheet.classList.add('open');
+      isVisible = true;
+    },
+    selectGeology: (geol) => {
+      currentItem = { isGeology: true, ...geol };
+      render();
+      sheet.classList.add('open');
+      isVisible = true;
+    },
+    selectCctv: (cam) => {
+      currentItem = { isCctv: true, ...cam };
       render();
       sheet.classList.add('open');
       isVisible = true;

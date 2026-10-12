@@ -115,6 +115,58 @@ export function calculatePhysicalWindVector(lat, lng, date = new Date()) {
   return { u, v, speed, dirDeg };
 }
 
+let liveNWPDataInstance = null;
+
+export function setLiveWindData(nwpData) {
+  liveNWPDataInstance = nwpData;
+}
+
+/**
+ * Calculates authentic live surface wind vector using real-time NWP data
+ * Falls back to physical climatological monsoon model if live data is not yet loaded.
+ */
+export function calculateLiveWindVector(lat, lng, date = new Date()) {
+  if (liveNWPDataInstance && liveNWPDataInstance.length > 0) {
+    let totalWeight = 0;
+    let weightedU = 0;
+    let weightedV = 0;
+
+    for (const node of liveNWPDataInstance) {
+      const dLat = (node.lat - lat);
+      const dLng = (node.lng - lng) * Math.cos(lat * Math.PI / 180);
+      const dist = Math.sqrt(dLat * dLat + dLng * dLng);
+
+      if (dist <= 3.8) {
+        const weight = 1 / (Math.max(0.04, dist) * Math.max(0.04, dist));
+        const dayData = node.dailyForecasts?.[0] || {};
+        const windModel = dayData.ecmwf || dayData.gfs || {};
+        const speedKmh = windModel.windSpeedKmh || 12;
+        const dirDeg = windModel.windDirectionDeg || 45;
+        const speedMps = Math.max(0.5, speedKmh / 3.6);
+
+        const rad = (dirDeg * Math.PI) / 180;
+        const nodeU = -speedMps * Math.sin(rad);
+        const nodeV = -speedMps * Math.cos(rad);
+
+        weightedU += nodeU * weight;
+        weightedV += nodeV * weight;
+        totalWeight += weight;
+      }
+    }
+
+    if (totalWeight > 0) {
+      const u = weightedU / totalWeight;
+      const v = weightedV / totalWeight;
+      const speed = Math.sqrt(u * u + v * v);
+      let dirDeg = (270 - Math.atan2(v, u) * (180 / Math.PI)) % 360;
+      if (dirDeg < 0) dirDeg += 360;
+      return { u, v, speed, dirDeg };
+    }
+  }
+
+  return calculatePhysicalWindVector(lat, lng, date);
+}
+
 /**
  * Creates and attaches the Wind Field Particle Layer to MapLibre GL
  * @param {Object} map - MapLibre GL instance
@@ -236,8 +288,8 @@ export function createWindFieldLayer(map) {
         continue;
       }
 
-      // 2. Sample physical wind vector at current geographic location
-      const { u, v, speed } = calculatePhysicalWindVector(p.lat, p.lng);
+      // 2. Sample live or physical wind vector at current geographic location
+      const { u, v, speed } = calculateLiveWindVector(p.lat, p.lng);
       p.speed = speed;
 
       // 3. Normalized visual step:
@@ -326,6 +378,9 @@ export function createWindFieldLayer(map) {
 
   return {
     get canvas() { return canvas; },
+    setLiveWindData: (nwp) => {
+      setLiveWindData(nwp);
+    },
     setVisible: (visible) => {
       isLayerVisible = visible;
       if (visible) {
@@ -336,7 +391,7 @@ export function createWindFieldLayer(map) {
     },
     isVisible: () => isLayerVisible,
     getWindAtPoint: (lat, lng) => {
-      const { u, v, speed, dirDeg } = calculatePhysicalWindVector(lat, lng);
+      const { u, v, speed, dirDeg } = calculateLiveWindVector(lat, lng);
       const beaufort = getBeaufortInfo(speed);
       const dirText = getWindDirectionText(dirDeg);
       return {

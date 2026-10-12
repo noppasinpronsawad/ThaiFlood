@@ -155,27 +155,33 @@ export function evaluateDamRuleCurve(dam, date = new Date()) {
   // Operational Zone Evaluation
   let zone = 'normal';
   let zoneLabel = 'อยู่ในเกณฑ์ควบคุมปกติ (Normal Zone)';
+  let zoneLabelEn = 'Within Normal Rule Curve Envelope';
   let zoneColor = '#0284c7';
   let badgeBg = '#f0f9ff';
   let border = '#38bdf8';
   let advice = 'ปริมาณน้ำอยู่ในเกณฑ์ควบคุมมาตรฐานระหว่าง URC และ LRC บริหารจัดการระบายน้ำตามแผนปกติ';
+  let adviceEn = 'Storage volume is within standard conservation envelope between URC and LRC. Continue regular discharge schedule.';
 
   if (percentStorage > urcPercent) {
     const diff = Number((percentStorage - urcPercent).toFixed(1));
     zone = 'above_urc';
     zoneLabel = `🔴 เหนือเกณฑ์ควบคุมตอนบน (+${diff}% จาก URC)`;
+    zoneLabelEn = `🔴 Above Upper Rule Curve (+${diff}% from URC)`;
     zoneColor = '#dc2626';
     badgeBg = '#fef2f2';
     border = '#ef4444';
     advice = 'ปริมาณน้ำเกินเส้นเกณฑ์ควบคุมตอนบน (URC) เสี่ยงน้ำล้นอาคารระบายน้ำล้น เขื่อนจำเป็นต้องปรับเพิ่มการระบายน้ำเพื่อควบคุมระดับน้ำให้อยู่ในเกณฑ์ปลอดภัย';
+    adviceEn = 'Storage exceeds Upper Rule Curve (URC). Risk of spillway overflow. Reservoir discharge must be increased to maintain structural safety margin.';
   } else if (percentStorage < lrcPercent) {
     const diff = Number((lrcPercent - percentStorage).toFixed(1));
     zone = 'below_lrc';
     zoneLabel = `🟡 ต่ำกว่าเกณฑ์ควบคุมตอนล่าง (-${diff}% จาก LRC)`;
+    zoneLabelEn = `🟡 Below Lower Rule Curve (-${diff}% from LRC)`;
     zoneColor = '#d97706';
     badgeBg = '#fffbeb';
     border = '#f59e0b';
     advice = 'ปริมาณน้ำต่ำกว่าเส้นเกณฑ์ควบคุมตอนล่าง (LRC) เสี่ยงต่อปัญหาภัยแล้งและขาดแคลนน้ำเพื่อการเกษตรและอุปโภค ควรจำกัดการระบายน้ำเฉพาะเพื่อการรักษาระบบนิเวศ';
+    adviceEn = 'Storage is below Lower Rule Curve (LRC). Drought risk. Water releases should be restricted strictly to minimum ecological baseflow.';
   }
 
   // Generate 12-month summary for UI charts
@@ -195,10 +201,12 @@ export function evaluateDamRuleCurve(dam, date = new Date()) {
     percentStorage,
     zone,
     zoneLabel,
+    zoneLabelEn,
     zoneColor,
     badgeBg,
     border,
     advice,
+    adviceEn,
     annualPoints
   };
 }

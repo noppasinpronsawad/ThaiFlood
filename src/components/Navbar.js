@@ -5,9 +5,22 @@
  */
 import { getVisitorCount } from '../services/analyticsService.js';
 import { searchLocalProvinces, searchThaiLocations } from '../services/geocodeService.js';
+import { 
+  getLanguage, 
+  setLanguage, 
+  t, 
+  localizeName, 
+  localizeProvince, 
+  localizeBasin, 
+  localizeAgency, 
+  formatUnit, 
+  formatDateTimeCE, 
+  localizeDateTime, 
+  getDrawerSourcesHTML 
+} from '../services/i18nService.js';
 
 export function createNavbar(options) {
-  const { stations = [], dams = [], bmaRoads = [], onSearchSelect, onLayerToggle, onECMWFDayChange, onGFSDayChange } = options;
+  let { stations = [], dams = [], dohRoads = { type: 'FeatureCollection', features: [] }, onSearchSelect, onLayerToggle, onECMWFDayChange, onGFSDayChange, onNavigateToStatistics } = options;
 
   const overlay = document.createElement('div');
   overlay.className = 'gmaps-nav-overlay';
@@ -67,7 +80,7 @@ export function createNavbar(options) {
           <!-- 1. Flood Now -->
           <label class="gmaps-toggle-row" for="toggle-flood-now">
             <div class="layer-info">
-              <span class="layer-dot dot-red"></span>
+              <span class="layer-icon-box">🌊</span>
               <div class="layer-text-wrap">
                 <div class="layer-name">น้ำท่วมปัจจุบัน</div>
                 <div class="layer-desc">ขอบเขตน้ำล้นตลิ่ง · ล่าสุด: 29 ก.ย. 2026 01:00 น.</div>
@@ -82,7 +95,7 @@ export function createNavbar(options) {
           <!-- 2. 7-Day Forecast -->
           <label class="gmaps-toggle-row" for="toggle-forecast-7d">
             <div class="layer-info">
-              <span class="layer-dot dot-orange"></span>
+              <span class="layer-icon-box">⚠️</span>
               <div class="layer-text-wrap">
                 <div class="layer-name">เสี่ยงภัย 7 วัน</div>
                 <div class="layer-desc">คาดการณ์ล่วงหน้า 7 วัน · ล่าสุด: 29 ก.ย. 2026 01:00 น.</div>
@@ -98,7 +111,7 @@ export function createNavbar(options) {
           <div class="layer-item-wrapper">
             <label class="gmaps-toggle-row" for="toggle-dams">
               <div class="layer-info">
-                <span style="font-size: 15px;">🏢</span>
+                <span class="layer-icon-box">🏢</span>
                 <div class="layer-text-wrap">
                   <div class="layer-name">เขื่อนและอ่างเก็บน้ำ</div>
                   <div class="layer-desc">จุดเขื่อน & ผืนน้ำจริง · ล่าสุด: 29 ก.ย. 2026 06:00 น.</div>
@@ -133,7 +146,7 @@ export function createNavbar(options) {
           <!-- 4. Water Flow Direction -->
           <label class="gmaps-toggle-row" for="toggle-flow-direction">
             <div class="layer-info">
-              <span class="layer-dot dot-blue"></span>
+              <span class="layer-icon-box">↗️</span>
               <div class="layer-text-wrap">
                 <div class="layer-name">ทิศทางน้ำไหล</div>
                 <div class="layer-desc">ลูกศรเวกเตอร์ทิศทางกระแสน้ำ · ล่าสุด: 29 ก.ย. 2026 01:00 น.</div>
@@ -148,7 +161,7 @@ export function createNavbar(options) {
           <!-- 5. Water Telemetry Stations -->
           <label class="gmaps-toggle-row" for="toggle-stations">
             <div class="layer-info">
-              <span style="font-size: 14px;">📍</span>
+              <span class="layer-icon-box">📍</span>
               <div class="layer-text-wrap">
                 <div class="layer-name">สถานีวัดระดับน้ำ</div>
                 <div class="layer-desc">1,400+ จุดวัดโทรมาตร สสน. · ล่าสุด: 29 ก.ย. 2026 01:00 น.</div>
@@ -164,7 +177,7 @@ export function createNavbar(options) {
           <div class="layer-item-wrapper">
             <label class="gmaps-toggle-row" for="toggle-dmr-geology">
               <div class="layer-info">
-                <span style="font-size: 14px;">🪨</span>
+                <span class="layer-icon-box">🪨</span>
                 <div class="layer-text-wrap">
                   <div class="layer-name">ธรณีวิทยา (DMR 1:250k)</div>
                   <div class="layer-desc">หน่วยหิน & รอยเลื่อน กรมทรัพยากรธรณี</div>
@@ -192,7 +205,7 @@ export function createNavbar(options) {
           <div class="layer-item-wrapper">
             <label class="gmaps-toggle-row" for="toggle-sat-water">
               <div class="layer-info">
-                <span style="font-size: 14px;">📡</span>
+                <span class="layer-icon-box">📡</span>
                 <div class="layer-text-wrap">
                   <div class="layer-name">เรดาร์ตรวจฝนสด (TMD / RainViewer Radar)</div>
                   <div class="layer-desc" id="desc-sat-water">ตรวจจับกลุ่มฝนสด · อัปเดตล่าสุด: <span class="radar-live-ts">29 ก.ย. 2026 01:20 น.</span></div>
@@ -221,7 +234,7 @@ export function createNavbar(options) {
           <div class="layer-item-wrapper">
             <label class="gmaps-toggle-row" for="toggle-sat-clouds">
               <div class="layer-info">
-                <span style="font-size: 14px;">☁️</span>
+                <span class="layer-icon-box">☁️</span>
                 <div class="layer-text-wrap">
                   <div class="layer-name">ดาวเทียมกลุ่มเมฆ (Himawari)</div>
                   <div class="layer-desc" id="desc-sat-clouds">กลุ่มเมฆฝนสด Clean IR · อัปเดตล่าสุด: <span class="clouds-live-ts">29 ก.ย. 2026 01:20 น.</span></div>
@@ -250,7 +263,7 @@ export function createNavbar(options) {
           <div class="layer-item-wrapper">
             <label class="gmaps-toggle-row" for="toggle-gfs">
               <div class="layer-info">
-                <span style="font-size: 14px;">🇺🇸</span>
+                <span class="layer-icon-box">🇺🇸</span>
                 <div class="layer-text-wrap">
                   <div class="layer-name">โมเดลคาดการณ์ฝน GFS (NOAA - ปรับวันได้)</div>
                   <div class="layer-desc">แบบจำลอง NOAA GFS (13 กม.) ล่วงหน้า 7 วัน · ล่าสุด: 29 ก.ย. 2026 00:00 น.</div>
@@ -289,7 +302,7 @@ export function createNavbar(options) {
           <div class="layer-item-wrapper">
             <label class="gmaps-toggle-row" for="toggle-ecmwf">
               <div class="layer-info">
-                <span style="font-size: 14px;">🇪🇺</span>
+                <span class="layer-icon-box">🇪🇺</span>
                 <div class="layer-text-wrap">
                   <div class="layer-name">โมเดลคาดการณ์ฝน ECMWF (ยุโรป - ปรับวันได้)</div>
                   <div class="layer-desc">แบบจำลอง ECMWF IFS (9 กม.) ล่วงหน้า 7 วัน · ล่าสุด: 29 ก.ย. 2026 00:00 น.</div>
@@ -328,7 +341,7 @@ export function createNavbar(options) {
           <div class="layer-item-wrapper">
             <label class="gmaps-toggle-row" for="toggle-doh-roads">
               <div class="layer-info">
-                <span style="font-size: 14px;">🛣️</span>
+                <span class="layer-icon-box">🛣️</span>
                 <div class="layer-text-wrap">
                   <div class="layer-name">น้ำท่วมทางหลวงทั่วประเทศ (DOH)</div>
                   <div class="layer-desc">จุดน้ำท่วมทางหลวง สัญลักษณ์ ทล. · ล่าสุด: 29 ก.ย. 2026 01:00 น.</div>
@@ -350,16 +363,14 @@ export function createNavbar(options) {
               </div>
               <div class="legend-note">💡 ข้อมูล <b>กรมทางหลวง (DOH)</b> แสดงเฉพาะเส้นทางที่น้ำท่วม พร้อมตราสัญลักษณ์ทางหลวง สายด่วน 1586</div>
             </div>
-            <!-- Keep hidden fallback for bma-roads -->
-            <input type="checkbox" id="toggle-bma-roads" data-layer="bma-roads" style="display:none;" />
           </div>
 
           <!-- 12. Traffy Fondue Road Flood Incidents (Minimalist Road Icon) -->
           <div class="layer-item-wrapper">
             <label class="gmaps-toggle-row" for="toggle-traffy-flood">
               <div class="layer-info">
-                <span class="minimal-road-layer-icon" style="display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px;">
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none">
+                <span class="layer-icon-box">
+                  <svg class="minimal-road-layer-icon" viewBox="0 0 24 24" width="18" height="18" fill="none">
                     <path d="M6 20L9.5 4H14.5L18 20H6Z" fill="#334155" stroke="#94a3b8" stroke-width="1.2" stroke-linejoin="round"/>
                     <line x1="12" y1="5" x2="12" y2="8" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"/>
                     <line x1="12" y1="10.5" x2="12" y2="13.5" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"/>
@@ -372,7 +383,7 @@ export function createNavbar(options) {
                 </div>
               </div>
               <div class="gmaps-switch">
-                <input type="checkbox" id="toggle-traffy-flood" data-layer="traffy-flood" checked />
+                <input type="checkbox" id="toggle-traffy-flood" data-layer="traffy-flood" />
                 <span class="switch-slider slider-orange"></span>
               </div>
             </label>
@@ -393,7 +404,7 @@ export function createNavbar(options) {
           <div class="layer-item-wrapper">
             <label class="gmaps-toggle-row" for="toggle-traffic">
               <div class="layer-info">
-                <span style="font-size: 14px;">🚦</span>
+                <span class="layer-icon-box">🚦</span>
                 <div class="layer-text-wrap">
                   <div class="layer-name">สภาพการจราจรสด (Traffic Flow)</div>
                   <div class="layer-desc">สภาพการจราจรสดทั่วประเทศ · ตรวจสอบล่าสุด: 29 ก.ย. 2026 01:20 น.</div>
@@ -425,7 +436,7 @@ export function createNavbar(options) {
           <div class="layer-item-wrapper">
             <label class="gmaps-toggle-row" for="toggle-wind-field">
               <div class="layer-info">
-                <span style="font-size: 14px;">💨</span>
+                <span class="layer-icon-box">💨</span>
                 <div class="layer-text-wrap">
                   <div class="layer-name">แผนที่กระแสลมผิวพื้น (Wind Field Map)</div>
                   <div class="layer-desc">อนุภาคกระแสลมเคลื่อนไหว 60 FPS มาตรฐาน WMO 10m ผิวพื้น</div>
@@ -446,6 +457,30 @@ export function createNavbar(options) {
                 <span style="color:#f43f5e; font-weight:700;">>24 m/s (พายุ)</span>
               </div>
               <div class="legend-note">💡 จำลองเวกเตอร์ความเร็วลม (u, v) ณ ระดับผิวพื้น 10 เมตร ตามเกณฑ์องค์การอุตุนิยมวิทยาโลก (WMO No. 306/485)</div>
+            </div>
+          </div>
+
+          <!-- 14. Real Live CCTV Surveillance (DOH / BMA DDS / RID) -->
+          <div class="layer-item-wrapper">
+            <label class="gmaps-toggle-row" for="toggle-cctv">
+              <div class="layer-info">
+                <span class="layer-icon-box">📹</span>
+                <div class="layer-text-wrap">
+                  <div class="layer-name">กล้อง CCTV ทางหลวงและจุดตรวจน้ำ</div>
+                  <div class="layer-desc">ภาพสดกล้องตรวจน้ำและจราจร (กรมทางหลวง / กทม. / กรมชลฯ)</div>
+                </div>
+              </div>
+              <div class="gmaps-switch">
+                <input type="checkbox" id="toggle-cctv" data-layer="cctv" />
+                <span class="switch-slider slider-blue"></span>
+              </div>
+            </label>
+            <div class="layer-legend-box" id="legend-cctv" style="display: none;">
+              <div class="legend-row">
+                <span class="legend-color" style="background:#0284c7; height:8px; width:8px; border-radius:50%; display:inline-block;"></span>
+                <span><b>กล้อง CCTV สด:</b> กรมทางหลวง, สำนักการระบายน้ำ กทม., กรมชลประทาน</span>
+              </div>
+              <div class="legend-note">💡 คลิกที่หมุดกล้องเพื่อดูภาพ Snapshot สดและสถานะสัญญาณใน Place Sheet</div>
             </div>
           </div>
         </div>
@@ -486,16 +521,22 @@ export function createNavbar(options) {
       <div class="drawer-header">
         <div class="drawer-header-brand">
           <span class="drawer-logo">🌊</span>
-          <div>
+          <div class="drawer-title-group">
             <div class="drawer-title">ThaiFlood Monitor</div>
             <div class="drawer-subtitle">ระบบสารสนเทศและเตือนภัยน้ำท่วม</div>
           </div>
         </div>
-        <button class="drawer-close-btn" id="drawer-close-btn" title="ปิดเมนู" type="button">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
-            <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-          </svg>
-        </button>
+        <div class="drawer-header-actions">
+          <div class="lang-toggle-container" id="lang-toggle-container" role="group" aria-label="Language selector">
+            <button class="lang-toggle-btn active" id="btn-lang-th" data-lang="th" type="button" title="ภาษาไทย">TH</button>
+            <button class="lang-toggle-btn" id="btn-lang-en" data-lang="en" type="button" title="English">EN</button>
+          </div>
+          <button class="drawer-close-btn" id="drawer-close-btn" title="ปิดเมนู" type="button">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+              <path d="M18 6L6 18M6 6L18 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
       </div>
 
       <!-- Drawer Tabs -->
@@ -599,6 +640,18 @@ export function createNavbar(options) {
                 <div class="source-card-title">4. น้ำท่วมถนน กทม. & สภาพการจราจรสด</div>
                 <div class="source-card-body"><b>สำนักการระบายน้ำ กรุงเทพมหานคร</b> (23 เส้นทางหลัก) ผสาน <b>Google Real-Time Traffic Flow Layer</b> แสดงสภาพการจราจรบนผิวถนน</div>
               </div>
+            </div>
+
+            <!-- Action Card: สถิติระบบ & ดาวน์โหลดข้อมูลย้อนหลัง (Specification 3) -->
+            <div class="source-statistics-card">
+              <button id="btn-open-statistics" class="btn-statistics-link" type="button">
+                <span class="stat-icon">📊</span>
+                <div class="stat-text">
+                  <div class="stat-title">สถิติระบบ & ดาวน์โหลดข้อมูลย้อนหลัง</div>
+                  <div class="stat-desc">ตรวจสอบความพร้อมของ API และดาวน์โหลดประวัติข้อมูลน้ำท่วม (.zip)</div>
+                </div>
+                <span class="stat-arrow">→</span>
+              </button>
             </div>
           </div>
         </div>
@@ -712,8 +765,11 @@ export function createNavbar(options) {
     const matchedDams = dams.filter(
       (d) =>
         (d.name && d.name.toLowerCase().includes(val)) ||
+        (d.name_en && d.name_en.toLowerCase().includes(val)) ||
         (d.shortName && d.shortName.toLowerCase().includes(val)) ||
+        (d.shortName_en && d.shortName_en.toLowerCase().includes(val)) ||
         (d.province && d.province.toLowerCase().includes(val)) ||
+        (d.province_en && d.province_en.toLowerCase().includes(val)) ||
         (d.basin && d.basin.toLowerCase().includes(val))
     );
 
@@ -722,8 +778,11 @@ export function createNavbar(options) {
       (s) =>
         (s.code && s.code.toLowerCase().includes(val)) ||
         (s.shortName && s.shortName.toLowerCase().includes(val)) ||
+        (s.shortName_en && s.shortName_en.toLowerCase().includes(val)) ||
         (s.name && s.name.toLowerCase().includes(val)) ||
+        (s.name_en && s.name_en.toLowerCase().includes(val)) ||
         (s.province && s.province.toLowerCase().includes(val)) ||
+        (s.province_en && s.province_en.toLowerCase().includes(val)) ||
         (s.amphoe && s.amphoe.toLowerCase().includes(val)) ||
         (s.river && s.river.toLowerCase().includes(val)) ||
         (s.basin && s.basin.toLowerCase().includes(val))
@@ -816,12 +875,12 @@ export function createNavbar(options) {
           <div style="font-size: 18px; margin-right: 10px;">🏢</div>
           <div style="flex: 1; min-width: 0;">
             <div style="font-weight: 600; color: #0369a1; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-              ${d.name}
+              ${localizeName(d)}
             </div>
-            <div style="font-size: 11.5px; color: #5f6368;">จ.${d.province} · ${d.basin} (${d.agency})</div>
+            <div style="font-size: 11.5px; color: #5f6368;">${localizeProvince(d)} · ${localizeBasin(d)} (${d.agency})</div>
           </div>
           <span style="font-size: 11px; font-weight: 600; color: #0284c7; background: #e0f2fe; padding: 2px 6px; border-radius: 4px; white-space: nowrap;">
-            น้ำ ${d.percentStorage}%
+            ${getLanguage() === 'en' ? `Storage ${d.percentStorage}%` : `น้ำ ${d.percentStorage}%`}
           </span>
         </div>
       `).join('');
@@ -850,10 +909,10 @@ export function createNavbar(options) {
               <div style="font-size: 16px; margin-right: 10px; color: ${badgeColor};">📍</div>
               <div style="flex: 1; min-width: 0;">
                 <div style="font-weight: 600; color: #202124; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                  ${st.name}
+                  ${localizeName(st)}
                 </div>
                 <div style="font-size: 11.5px; color: #5f6368; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                  จ.${st.province} · ${st.river} (${st.agency || 'สสน.'})
+                  ${localizeProvince(st)} · ${st.river} (${st.agency || 'สสน.'})
                 </div>
               </div>
               <span style="font-size: 11px; font-weight: 600; color: ${badgeColor}; background: ${badgeColor}15; padding: 2px 6px; border-radius: 4px; white-space: nowrap;">
@@ -1052,6 +1111,42 @@ export function createNavbar(options) {
         <path d="M8 36L18 22L26 32L32 24L40 36H8Z" fill="#9333ea"/>
         <line x1="12" y1="32" x2="36" y2="32" stroke="#ffffff" stroke-width="1.8" stroke-dasharray="2 2"/>
       </svg>`
+    },
+    {
+      id: 'gfs',
+      name: 'โมเดลฝน GFS',
+      iconSvg: `<svg viewBox="0 0 48 48" width="36" height="36" fill="none">
+        <rect width="48" height="48" rx="12" fill="#eff6ff"/>
+        <path d="M14 26C11.8 26 10 24.2 10 22C10 20 11.5 18.3 13.5 18.1C14.3 14.6 17.4 12 21 12C25.4 12 29 15.6 29 20C29 20.3 29 20.7 28.9 21C30.7 21.2 32 22.7 32 24.5C32 26.4 30.4 28 28.5 28H14" fill="#2563eb"/>
+        <line x1="16" y1="32" x2="14" y2="38" stroke="#0284c7" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="22" y1="32" x2="20" y2="38" stroke="#0284c7" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="28" y1="32" x2="26" y2="38" stroke="#0284c7" stroke-width="2.5" stroke-linecap="round"/>
+        <rect x="29" y="8" width="16" height="12" rx="4" fill="#1d4ed8"/>
+        <text x="37" y="17" fill="#ffffff" font-size="7" font-weight="bold" text-anchor="middle">GFS</text>
+      </svg>`
+    },
+    {
+      id: 'sat-clouds',
+      name: 'ดาวเทียมเมฆ',
+      iconSvg: `<svg viewBox="0 0 48 48" width="36" height="36" fill="none">
+        <rect width="48" height="48" rx="12" fill="#f0fdfa"/>
+        <circle cx="24" cy="24" r="14" stroke="#0d9488" stroke-width="2" fill="#14b8a6" fill-opacity="0.15"/>
+        <path d="M16 28C14.5 28 13 26.8 13 25C13 23.5 14.2 22.2 15.6 22.1C16.2 19.5 18.6 17.5 21.5 17.5C25 17.5 27.8 20.3 27.8 23.8C29.2 24 30.3 25.2 30.3 26.6C30.3 28.1 29 29.3 27.5 29.3H16" fill="#0d9488"/>
+        <path d="M28 14L35 7M35 7V13M35 7H29" stroke="#0f766e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>`
+    },
+    {
+      id: 'cctv',
+      name: 'กล้อง CCTV สด',
+      iconSvg: `<svg viewBox="0 0 48 48" width="36" height="36" fill="none">
+        <rect width="48" height="48" rx="12" fill="#eff6ff"/>
+        <rect x="10" y="14" width="20" height="16" rx="4" fill="#0284c7"/>
+        <polygon points="30,19 38,14 38,30 30,25" fill="#0369a1"/>
+        <circle cx="20" cy="22" r="3" fill="#ffffff"/>
+        <circle cx="14" cy="18" r="1.5" fill="#ef4444"/>
+        <path d="M12 36H28" stroke="#0284c7" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="20" y1="30" x2="20" y2="36" stroke="#0284c7" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>`
     }
   ];
 
@@ -1083,7 +1178,7 @@ export function createNavbar(options) {
     const cards = mobileGrid.querySelectorAll('.mobile-layer-card-btn');
     cards.forEach((btn) => {
       const lid = btn.dataset.layer;
-      const chk = overlay.querySelector(`input[data-layer="${lid}"]`);
+      const chk = overlay.querySelector(`input[data-layer="${lid}"]`) || overlay.querySelector(`#toggle-${lid}`);
       const isActive = chk ? chk.checked : false;
       btn.classList.toggle('active', isActive);
       btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
@@ -1093,7 +1188,7 @@ export function createNavbar(options) {
   function renderMobileLayerGrid() {
     if (!mobileGrid) return;
     mobileGrid.innerHTML = MOBILE_LAYER_ITEMS.map((item) => {
-      const chk = overlay.querySelector(`input[data-layer="${item.id}"]`);
+      const chk = overlay.querySelector(`input[data-layer="${item.id}"]`) || overlay.querySelector(`#toggle-${item.id}`);
       const isActive = chk ? chk.checked : false;
       return `
         <button class="mobile-layer-card-btn ${isActive ? 'active' : ''}" data-layer="${item.id}" type="button" aria-pressed="${isActive ? 'true' : 'false'}" aria-label="${item.name}">
@@ -1113,7 +1208,7 @@ export function createNavbar(options) {
         lastTrigger = now;
         e.stopPropagation();
         const lid = btn.dataset.layer;
-        const chk = overlay.querySelector(`input[data-layer="${lid}"]`);
+        const chk = overlay.querySelector(`input[data-layer="${lid}"]`) || overlay.querySelector(`#toggle-${lid}`);
         if (chk) {
           chk.checked = !chk.checked;
           chk.dispatchEvent(new Event('change', { bubbles: true }));
@@ -1161,7 +1256,7 @@ export function createNavbar(options) {
   // Mobile Webview requirement: Start collapsed as an icon on mobile screens
   if (window.innerWidth <= 768) {
     layerPanel.classList.add('collapsed');
-    toggleBtnText.textContent = 'แสดง';
+    toggleBtnText.textContent = t('layer_menu_show');
     toggleBtnArrow.textContent = '▴';
   }
 
@@ -1177,10 +1272,10 @@ export function createNavbar(options) {
     }
     const isCollapsed = layerPanel.classList.toggle('collapsed');
     if (isCollapsed) {
-      toggleBtnText.textContent = 'แสดง';
+      toggleBtnText.textContent = t('layer_menu_show');
       toggleBtnArrow.textContent = '▴';
     } else {
-      toggleBtnText.textContent = 'ซ่อน';
+      toggleBtnText.textContent = t('layer_menu_hide');
       toggleBtnArrow.textContent = '▾';
     }
   }
@@ -1211,7 +1306,7 @@ export function createNavbar(options) {
       if (!layerPanel.classList.contains('collapsed')) {
         if (!layerPanel.contains(e.target) && !e.target.closest('#gmaps-btn-north')) {
           layerPanel.classList.add('collapsed');
-          toggleBtnText.textContent = 'แสดง';
+          toggleBtnText.textContent = t('layer_menu_show');
           toggleBtnArrow.textContent = '▴';
         }
       }
@@ -1279,8 +1374,8 @@ export function createNavbar(options) {
       } else if (layerId === 'doh-roads') {
         const leg = overlay.querySelector('#legend-doh-roads');
         if (leg) leg.style.display = isChecked ? 'block' : 'none';
-      } else if (layerId === 'bma-roads') {
-        const leg = overlay.querySelector('#legend-bma-roads');
+      } else if (layerId === 'cctv') {
+        const leg = overlay.querySelector('#legend-cctv');
         if (leg) leg.style.display = isChecked ? 'block' : 'none';
       } else if (layerId === 'traffy-flood') {
         const leg = overlay.querySelector('#legend-traffy-flood');
@@ -1334,10 +1429,41 @@ export function createNavbar(options) {
     drawerBackdrop.classList.remove('open');
   }
 
-  if (drawer) drawer.addEventListener('click', (e) => e.stopPropagation());
+  function triggerOpenStatistics(e) {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    closeDrawer();
+    if (onNavigateToStatistics) {
+      onNavigateToStatistics();
+    } else {
+      window.history.pushState({}, '', '/statistics');
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }
+  }
+
+  if (drawer) {
+    drawer.addEventListener('click', (e) => {
+      const statBtn = e.target.closest('#btn-open-statistics') || e.target.closest('.btn-statistics-link');
+      if (statBtn) {
+        triggerOpenStatistics(e);
+        return;
+      }
+      e.stopPropagation();
+    });
+  }
   if (hamburgerBtn) hamburgerBtn.addEventListener('click', () => openDrawer());
   if (drawerCloseBtn) drawerCloseBtn.addEventListener('click', closeDrawer);
   if (drawerBackdrop) drawerBackdrop.addEventListener('click', closeDrawer);
+
+  // Statistics & Historical Logs Button Click (Capture phase listener ensures guaranteed execution)
+  overlay.addEventListener('click', (e) => {
+    const statBtn = e.target.closest('#btn-open-statistics') || e.target.closest('.btn-statistics-link');
+    if (statBtn) {
+      triggerOpenStatistics(e);
+    }
+  }, true);
 
   // Drawer Tabs Switching
   const tabBtns = overlay.querySelectorAll('.drawer-tab-btn');
@@ -1360,101 +1486,308 @@ export function createNavbar(options) {
     });
   });
 
-  // Prepare Critical Alert Items (Stations, BMA Roads, High Dams)
-  const alertItems = [];
+  // Language Switcher Logic (TH ⇄ EN)
+  const btnLangTh = overlay.querySelector('#btn-lang-th');
+  const btnLangEn = overlay.querySelector('#btn-lang-en');
 
-  // 1. Stations with Overflow or Critical Status
-  stations.forEach((st) => {
-    if (st && (st.isOverflow || st.status === 'critical')) {
-      const level = typeof st.currentLevel === 'number' ? st.currentLevel : (typeof st.waterLevel === 'number' ? st.waterLevel : 0);
-      const bank = typeof st.bankCapacity === 'number' ? st.bankCapacity : 0;
-      const diff = typeof st.diff === 'number' ? st.diff : (level - bank);
-      const diffText = diff > 0 ? `+${diff.toFixed(2)} ม.` : '';
-      const dtText = st.datetime ? `${st.datetime} น.` : (st.date ? `${st.date} ${st.time || ''} น.` : '2026-09-26 19:20 น.');
-      alertItems.push({
-        id: `st_${st.id}`,
-        type: 'station',
-        icon: '📍',
-        title: st.name || `สถานี ${st.code || st.id}`,
-        subtitle: `จ.${st.province || '-'} · ลำน้ำ ${st.river || 'ลุ่มน้ำหลัก'} (${st.agency || 'สสน.'})`,
-        datetime: dtText,
-        badge: '🔴 วิกฤตล้นตลิ่ง',
-        badgeColor: '#dc2626',
-        badgeBg: '#fef2f2',
-        stat1Label: 'ระดับน้ำปัจจุบัน',
-        stat1Val: `${level.toFixed(2)} ม.รทก.`,
-        stat2Label: 'ระดับตลิ่งวิกฤต',
-        stat2Val: bank > 0 ? `${bank.toFixed(2)} ม.รทก.` : 'ไม่มีข้อมูลตลิ่ง',
-        note: `สถานะ: มวลน้ำล้นตลิ่ง ${diffText || st.diffDisplay || ''} เร่งระบายน้ำและเฝ้าระวังพื้นที่ลุ่มต่ำริมฝั่ง`,
-        raw: st
-      });
-    }
-  });
+  let alertItems = [];
+  let activeCardIndex = 0;
+  let isListView = false;
 
-  // 2. Bangkok Road Flood Corridors (BMA Drainage)
-  const bmaFeatures = (bmaRoads && bmaRoads.features) ? bmaRoads.features : [];
-  bmaFeatures.forEach((f) => {
-    const p = f.properties || {};
-    const isCrit = p.riskLevel === 'critical';
-    const coords = f.geometry && f.geometry.coordinates ? f.geometry.coordinates : [];
-    const centerCoord = coords.length > 0 ? coords[Math.floor(coords.length / 2)] : [100.56, 13.78];
-    const dtText = p.updatedAt ? `${p.updatedAt} 19:15 น.` : '2026-09-26 19:15 น.';
-    alertItems.push({
-      id: `road_${p.id}`,
-      type: 'road',
-      icon: '🚗',
-      title: p.road || 'ถนน กทม.',
-      subtitle: `${p.segment || ''} (เขต${p.district || '-'})`,
-      datetime: dtText,
-      badge: isCrit ? '🔴 น้ำท่วมผิวจราจรวิกฤต' : '🟠 เฝ้าระวังน้ำท่วมขัง',
-      badgeColor: isCrit ? '#dc2626' : '#ea580c',
-      badgeBg: isCrit ? '#fef2f2' : '#fffbeb',
-      stat1Label: 'ระดับน้ำท่วมขัง',
-      stat1Val: p.waterDepthCm || '15 - 25 ซม.',
-      stat2Label: 'ช่องทางที่กระทบ',
-      stat2Val: p.floodedLanes || '2 ช่องจราจร',
-      note: p.trafficImpact || 'รถเล็กสัญจรลำบาก ควรหลีกเลี่ยงเส้นทาง',
-      raw: {
-        ...p,
-        lng: centerCoord[0],
-        lat: centerCoord[1],
-        isRoad: true
+  function buildAlertItems() {
+    alertItems = [];
+    const isEn = getLanguage() === 'en';
+
+    // 1. Stations with Overflow or Critical Status
+    stations.forEach((st) => {
+      if (st && (st.isOverflow || st.status === 'critical')) {
+        const level = typeof st.currentLevel === 'number' ? st.currentLevel : (typeof st.waterLevel === 'number' ? st.waterLevel : 0);
+        const bank = typeof st.bankCapacity === 'number' ? st.bankCapacity : 0;
+        const diff = typeof st.diff === 'number' ? st.diff : (level - bank);
+        const diffText = diff > 0 ? (isEn ? `+${diff.toFixed(2)} m` : `+${diff.toFixed(2)} ม.`) : '';
+        const dtRaw = st.datetime || (st.date ? `${st.date} ${st.time || ''}` : '') || '2026-09-26 19:20';
+        const dtText = formatDateTimeCE(dtRaw) || localizeDateTime(dtRaw);
+        const provPrefix = t('alerts_prov_prefix');
+        const riverPrefix = t('alerts_river_prefix');
+        const provStr = localizeProvince(st) || st.province || '-';
+        const riverStr = localizeBasin(st) || st.river || (isEn ? 'Main River' : 'ลำน้ำหลัก');
+        const agencyStr = localizeAgency(st) || st.agency || (isEn ? 'HII' : 'สสน.');
+
+        alertItems.push({
+          id: `st_${st.id}`,
+          type: 'station',
+          icon: '📍',
+          title: localizeName(st) || st.name || (isEn ? `Station ${st.code || st.id}` : `สถานี ${st.code || st.id}`),
+          subtitle: `${provPrefix} ${provStr} · ${riverPrefix} ${riverStr} (${agencyStr})`,
+          datetime: dtText,
+          badge: t('alerts_overbank_badge'),
+          badgeColor: '#dc2626',
+          badgeBg: '#fef2f2',
+          stat1Label: t('sheet_water_level'),
+          stat1Val: formatUnit(level.toFixed(2), 'm_msl'),
+          stat2Label: t('sheet_bank_level'),
+          stat2Val: bank > 0 ? formatUnit(bank.toFixed(2), 'm_msl') : (isEn ? 'No Bank Data' : 'ไม่มีข้อมูลตลิ่ง'),
+          note: isEn
+            ? `Status: Overbank surge ${diffText ? diffText + ' ' : ''}Expedite drainage & monitor low-lying corridors.`
+            : `สถานะ: มวลน้ำล้นตลิ่ง ${diffText ? diffText + ' ' : ''}เร่งระบายน้ำและเฝ้าระวังพื้นที่ลุ่มต่ำริมฝั่ง`,
+          raw: st
+        });
       }
     });
-  });
 
-  // 3. High Storage Dams (>= 85%)
-  dams.forEach((d) => {
-    if (d && d.percentStorage >= 85) {
-      const dtText = d.date ? `${d.date} 06:00 น.` : '2026-09-26 06:00 น.';
-      alertItems.push({
-        id: `dam_${d.id}`,
-        type: 'dam',
-        icon: '🏢',
-        title: d.name,
-        subtitle: `จ.${d.province} · ลุ่มน้ำ ${d.basin} (${d.agency})`,
-        datetime: dtText,
-        badge: '🏢 น้ำกักเก็บวิกฤต',
-        badgeColor: '#dc2626',
-        badgeBg: '#fef2f2',
-        stat1Label: 'ปริมาตรน้ำกักเก็บ',
-        stat1Val: `${(d.currentStorage || 0).toLocaleString()} ล้าน ลบ.ม.`,
-        stat2Label: 'ความจุอ่างเก็บน้ำ',
-        stat2Val: `${d.percentStorage || 0}%`,
-        note: `การระบายน้ำ: ${d.released ? d.released.toLocaleString() : 0} ล้าน ลบ.ม./วัน เฝ้าระวังท้ายน้ำ`,
-        raw: {
-          ...d,
-          isDam: true
+    // 2. High Storage Dams (>= 85%)
+    dams.forEach((d) => {
+      if (d && d.percentStorage >= 85) {
+        const dtRaw = d.date ? `${d.date} 06:00` : '2026-09-26 06:00';
+        const dtText = formatDateTimeCE(dtRaw) || localizeDateTime(dtRaw);
+        const provPrefix = t('alerts_prov_prefix');
+        const basinPrefix = t('alerts_basin_prefix');
+        const provStr = localizeProvince(d) || d.province;
+        const basinStr = localizeBasin(d) || d.basin;
+        const agencyStr = localizeAgency(d) || d.agency;
+        const storageVal = formatUnit((d.currentStorage || 0).toLocaleString(), 'million_m3');
+        const releasedVal = d.released ? formatUnit(d.released.toLocaleString(), 'million_m3_day') : (isEn ? '0 Million m³/day' : '0 ล้าน ลบ.ม./วัน');
+
+        alertItems.push({
+          id: `dam_${d.id}`,
+          type: 'dam',
+          icon: '🏢',
+          title: localizeName(d) || d.name,
+          subtitle: `${provPrefix} ${provStr} · ${basinPrefix} ${basinStr} (${agencyStr})`,
+          datetime: dtText,
+          badge: t('alerts_dam_critical_badge'),
+          badgeColor: '#dc2626',
+          badgeBg: '#fef2f2',
+          stat1Label: t('sheet_storage'),
+          stat1Val: storageVal,
+          stat2Label: t('sheet_capacity'),
+          stat2Val: `${d.percentStorage || 0}%`,
+          note: isEn
+            ? `Discharge: ${releasedVal} · Monitor downstream corridor impacts.`
+            : `การระบายน้ำ: ${d.released ? d.released.toLocaleString() : 0} ล้าน ลบ.ม./วัน เฝ้าระวังผลกระทบพื้นที่ท้ายน้ำ`,
+          raw: {
+            ...d,
+            isDam: true
+          }
+        });
+      }
+    });
+
+    const alertsBadge = overlay.querySelector('#tab-alerts-badge');
+    const alertsCountText = overlay.querySelector('#alerts-count-text');
+    if (alertsBadge) alertsBadge.textContent = alertItems.length;
+    if (alertsCountText) alertsCountText.textContent = alertItems.length;
+  }
+
+  function updateNavbarLanguage(lang) {
+    const isEn = lang === 'en';
+    if (btnLangTh) btnLangTh.classList.toggle('active', !isEn);
+    if (btnLangEn) btnLangEn.classList.toggle('active', isEn);
+
+    // Search Box
+    const searchInput = overlay.querySelector('#gmaps-search-input');
+    if (searchInput) searchInput.placeholder = t('search_placeholder');
+    const searchSubmit = overlay.querySelector('#gmaps-search-submit');
+    if (searchSubmit) searchSubmit.title = t('search_submit');
+    if (hamburgerBtn) hamburgerBtn.title = t('menu_main');
+    if (drawerCloseBtn) drawerCloseBtn.title = t('close_menu');
+
+    // Drawer Header & Tabs
+    const drawerSub = overlay.querySelector('.drawer-subtitle');
+    if (drawerSub) drawerSub.textContent = t('drawer_subtitle');
+
+    const tabAlerts = overlay.querySelector('[data-tab="alerts"] .tab-label');
+    if (tabAlerts) tabAlerts.textContent = t('tab_alerts');
+    const tabSources = overlay.querySelector('[data-tab="sources"] .tab-label');
+    if (tabSources) tabSources.textContent = t('tab_sources');
+
+    // Drawer Data Sources Tab 2 (Complete Full HTML Translation)
+    const sourcesPane = overlay.querySelector('#tab-pane-sources');
+    if (sourcesPane) {
+      sourcesPane.innerHTML = getDrawerSourcesHTML(lang);
+    }
+
+    // Drawer Alerts Controls
+    const alertsTotalText = overlay.querySelector('.alerts-total-badge span:last-child');
+    if (alertsTotalText) {
+      alertsTotalText.innerHTML = `${t('alerts_total_prefix')} <b id="alerts-count-text">${alertItems ? alertItems.length : 0}</b> ${t('alerts_total_suffix')}`;
+    }
+    const alertsViewToggle = overlay.querySelector('#alerts-view-toggle');
+    if (alertsViewToggle) {
+      alertsViewToggle.textContent = isListView ? t('alerts_view_deck') : t('alerts_view_all');
+    }
+    const deckPrev = overlay.querySelector('#deck-btn-prev');
+    if (deckPrev) deckPrev.textContent = t('alerts_prev');
+    const deckNext = overlay.querySelector('#deck-btn-next');
+    if (deckNext) deckNext.textContent = t('alerts_next');
+
+    // Layer Menu Header & Toggle Button
+    const layerHeaderTitle = overlay.querySelector('.layer-header-title span:last-child');
+    if (layerHeaderTitle) layerHeaderTitle.textContent = t('layer_menu_title');
+
+    const togglePanelBtn = overlay.querySelector('#btn-toggle-layer-panel');
+    if (togglePanelBtn) {
+      const panel = overlay.querySelector('#gmaps-layer-panel');
+      const isCollapsed = panel && panel.classList.contains('collapsed');
+      const textSpan = togglePanelBtn.querySelector('.toggle-btn-text');
+      const arrowSpan = togglePanelBtn.querySelector('.toggle-btn-arrow');
+      if (textSpan) textSpan.textContent = isCollapsed ? t('layer_menu_show') : t('layer_menu_hide');
+      if (arrowSpan) arrowSpan.textContent = isCollapsed ? '▴' : '▾';
+    }
+
+    // Layer Names & Descriptions
+    const layerMap = {
+      'flood-now': { name: 'layer_flood_now', desc: 'layer_flood_now_desc' },
+      'forecast-7d': { name: 'layer_forecast_7d', desc: 'layer_forecast_7d_desc' },
+      'dams': { name: 'layer_dams', desc: 'layer_dams_desc' },
+      'flow-direction': { name: 'layer_flow_direction', desc: 'layer_flow_direction_desc' },
+      'stations': { name: 'layer_stations', desc: 'layer_stations_desc' },
+      'dmr-geology': { name: 'layer_geology', desc: 'layer_geology_desc' },
+      'sat-water': { name: 'layer_radar', desc: 'layer_radar_desc' },
+      'radar': { name: 'layer_radar', desc: 'layer_radar_desc' },
+      'sat-clouds': { name: 'layer_himawari', desc: 'layer_himawari_desc' },
+      'himawari': { name: 'layer_himawari', desc: 'layer_himawari_desc' },
+      'gfs': { name: 'layer_gfs', desc: 'layer_gfs_desc' },
+      'ecmwf': { name: 'layer_ecmwf', desc: 'layer_ecmwf_desc' },
+      'traffic': { name: 'layer_traffic', desc: 'layer_traffic_desc' },
+      'doh-roads': { name: 'layer_doh_roads', desc: 'layer_doh_roads_desc' },
+      'wind-field': { name: 'layer_wind_field', desc: 'layer_wind_field_desc' },
+      'wind': { name: 'layer_wind_field', desc: 'layer_wind_field_desc' },
+      'cctv': { name: 'layer_cctv', desc: 'layer_cctv_desc' },
+      'traffy-flood': { name: 'layer_traffy', desc: 'layer_traffy_desc' }
+    };
+
+    Object.entries(layerMap).forEach(([layerId, keys]) => {
+      const input = overlay.querySelector(`input[data-layer="${layerId}"]`) || overlay.querySelector(`#toggle-${layerId}`);
+      if (input) {
+        const row = input.closest('.gmaps-toggle-row');
+        if (row) {
+          const nameEl = row.querySelector('.layer-name');
+          if (nameEl) nameEl.textContent = t(keys.name);
+          const descEl = row.querySelector('.layer-desc');
+          if (descEl) descEl.textContent = t(keys.desc);
         }
+      }
+    });
+
+    // Legends
+    const legendDams = overlay.querySelector('#legend-dams');
+    if (legendDams) {
+      const rows = legendDams.querySelectorAll('.legend-row span:last-child');
+      if (rows[0]) rows[0].innerHTML = `<b>${t('legend_dam_critical')}</b>`;
+      if (rows[1]) rows[1].innerHTML = `<b>${t('legend_dam_watch')}</b>`;
+      if (rows[2]) rows[2].innerHTML = `<b>${t('legend_dam_normal')}</b>`;
+      if (rows[3]) rows[3].innerHTML = `<b>${t('legend_dam_low')}</b>`;
+      const note = legendDams.querySelector('.legend-note');
+      if (note) note.textContent = t('legend_dam_note');
+    }
+
+    const legendDoh = overlay.querySelector('#legend-doh-roads');
+    if (legendDoh) {
+      const rows = legendDoh.querySelectorAll('.legend-row span:last-child');
+      if (rows[0]) rows[0].innerHTML = `<b>${t('legend_doh_passable')}</b>`;
+      if (rows[1]) rows[1].innerHTML = `<b>${t('legend_doh_impassable')}</b>`;
+      const note = legendDoh.querySelector('.legend-note');
+      if (note) note.textContent = t('legend_doh_note');
+    }
+
+    const legendGeol = overlay.querySelector('#legend-dmr-geology');
+    if (legendGeol) {
+      const rows = legendGeol.querySelectorAll('.legend-row span:last-child');
+      if (rows[0]) rows[0].innerHTML = `<b>${isEn ? 'Map Colors:' : 'สีสันบนแผนที่:'}</b> ${t('legend_geol_colors')}`;
+      if (rows[1]) rows[1].innerHTML = `<b>${isEn ? 'Red/Black Lines:' : 'เส้นสีแดง/ดำ:'}</b> ${t('legend_geol_faults')}`;
+      const note = legendGeol.querySelector('.legend-note');
+      if (note) note.innerHTML = t('legend_geol_note');
+    }
+
+    const legendCctv = overlay.querySelector('#legend-cctv');
+    if (legendCctv) {
+      const row = legendCctv.querySelector('.legend-row span:last-child');
+      if (row) row.innerHTML = `<b>${isEn ? 'Live CCTV:' : 'กล้อง CCTV สด:'}</b> ${isEn ? 'Dept. of Highways, BMA Drainage Dept., Royal Irrigation Dept.' : 'กรมทางหลวง, สำนักการระบายน้ำ กทม., กรมชลประทาน'}`;
+      const note = legendCctv.querySelector('.legend-note');
+      if (note) note.textContent = t('legend_cctv_note');
+    }
+
+    const legendGfs = overlay.querySelector('#legend-gfs');
+    if (legendGfs) {
+      const titleEl = legendGfs.querySelector('div:first-child');
+      if (titleEl) titleEl.textContent = t('legend_forecast_day_select');
+      legendGfs.querySelectorAll('.gfs-day-btn').forEach((btn) => {
+        const d = parseInt(btn.getAttribute('data-day'), 10);
+        btn.textContent = d === 0 ? t('legend_today') : (isEn ? `+${d}d` : `+${d} วัน`);
       });
+      const note = legendGfs.querySelector('.legend-note');
+      if (note) note.textContent = t('legend_gfs_note');
+    }
+
+    const legendEcmwf = overlay.querySelector('#legend-ecmwf');
+    if (legendEcmwf) {
+      const titleEl = legendEcmwf.querySelector('div:first-child');
+      if (titleEl) titleEl.textContent = t('legend_forecast_day_select');
+      legendEcmwf.querySelectorAll('.ecmwf-day-btn').forEach((btn) => {
+        const d = parseInt(btn.getAttribute('data-day'), 10);
+        btn.textContent = d === 0 ? t('legend_today') : (isEn ? `+${d}d` : `+${d} วัน`);
+      });
+      const note = legendEcmwf.querySelector('.legend-note');
+      if (note) note.textContent = t('legend_ecmwf_note');
+    }
+
+    const legendRadar = overlay.querySelector('#legend-sat-water');
+    if (legendRadar) {
+      const note = legendRadar.querySelector('.legend-note');
+      if (note) note.textContent = t('legend_radar_note');
+    }
+
+    const legendClouds = overlay.querySelector('#legend-sat-clouds');
+    if (legendClouds) {
+      const note = legendClouds.querySelector('.legend-note');
+      if (note) note.textContent = t('legend_clouds_note');
+    }
+
+    const legendWind = overlay.querySelector('#legend-wind-field');
+    if (legendWind) {
+      const note = legendWind.querySelector('.legend-note');
+      if (note) note.textContent = t('legend_wind_note');
+    }
+
+    const legendTraffy = overlay.querySelector('#legend-traffy-flood');
+    if (legendTraffy) {
+      const note = legendTraffy.querySelector('.legend-note');
+      if (note) note.textContent = t('legend_traffy_note');
+    }
+
+    const legendTraffic = overlay.querySelector('#legend-traffic');
+    if (legendTraffic) {
+      const note = legendTraffic.querySelector('.legend-note');
+      if (note) note.textContent = t('legend_traffic_note');
+    }
+  }
+
+  if (btnLangTh) {
+    btnLangTh.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setLanguage('th');
+    });
+  }
+  if (btnLangEn) {
+    btnLangEn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      setLanguage('en');
+    });
+  }
+
+  window.addEventListener('thaiflood:language-changed', (e) => {
+    updateNavbarLanguage(e.detail.lang);
+    buildAlertItems();
+    if (isListView) {
+      renderListView();
+    } else {
+      updateDeckCards();
     }
   });
 
-  // Update counts
-  const alertsBadge = overlay.querySelector('#tab-alerts-badge');
-  const alertsCountText = overlay.querySelector('#alerts-count-text');
-  if (alertsBadge) alertsBadge.textContent = alertItems.length;
-  if (alertsCountText) alertsCountText.textContent = alertItems.length;
+  // Prepare Critical Alert Items
+  buildAlertItems();
 
   // Render Alert Cards (Deck View & List View)
   const stackContainer = overlay.querySelector('#alerts-stack-container');
@@ -1465,9 +1798,6 @@ export function createNavbar(options) {
   const btnNext = overlay.querySelector('#deck-btn-next');
   const btnToggleView = overlay.querySelector('#alerts-view-toggle');
   const deckView = overlay.querySelector('#alerts-deck-view');
-
-  let activeCardIndex = 0;
-  let isListView = false;
 
   function renderAlertCardHTML(item, index, total) {
     return `
@@ -1484,8 +1814,8 @@ export function createNavbar(options) {
         </div>
         <div class="alert-card-datetime">
           <span class="datetime-icon">🕒</span>
-          <span class="datetime-label">ข้อมูล ณ วันที่/เวลา:</span>
-          <b class="datetime-val">${item.datetime || 'ตรวจวัดล่าสุด'}</b>
+          <span class="datetime-label">${t('alerts_datetime_label') || 'ข้อมูล ณ วันที่/เวลา:'}</span>
+          <b class="datetime-val">${item.datetime || (getLanguage() === 'en' ? 'Latest Telemetry' : 'ตรวจวัดล่าสุด')}</b>
         </div>
         <div class="alert-card-stats">
           <div class="alert-stat-box">
@@ -1499,7 +1829,7 @@ export function createNavbar(options) {
         </div>
         <div class="alert-card-note">${item.note}</div>
         <button class="alert-card-fly-btn" data-index="${index}" type="button">
-          <span>📍 ดูตำแหน่งบนแผนที่</span>
+          <span>${t('alerts_fly_btn')}</span>
           <span class="fly-arrow">→</span>
         </button>
       </div>
@@ -1512,8 +1842,8 @@ export function createNavbar(options) {
       stackContainer.innerHTML = `
         <div class="alerts-empty-state">
           <div style="font-size: 36px; margin-bottom: 8px;">✅</div>
-          <div style="font-weight: 700; color: #166534; font-size: 14px;">ไม่มีจุดตรวจวัดหรือถนนที่อยู่ในเกณฑ์วิกฤต</div>
-          <div style="font-size: 12px; color: #5f6368; margin-top: 4px;">ระดับน้ำในลำน้ำและถนนสายสำคัญอยู่ในเกณฑ์ควบคุม</div>
+          <div style="font-weight: 700; color: #166534; font-size: 14px;">${t('alerts_empty_title')}</div>
+          <div style="font-size: 12px; color: #5f6368; margin-top: 4px;">${t('alerts_empty_desc')}</div>
         </div>
       `;
       if (deckControls) deckControls.style.display = 'none';
@@ -1618,12 +1948,12 @@ export function createNavbar(options) {
       if (isListView) {
         deckView.style.display = 'none';
         listViewContainer.style.display = 'flex';
-        btnToggleView.textContent = 'การ์ดซ้อน';
+        btnToggleView.textContent = t('alerts_view_deck');
         renderListView();
       } else {
         listViewContainer.style.display = 'none';
         deckView.style.display = 'block';
-        btnToggleView.textContent = 'ดูทั้งหมด';
+        btnToggleView.textContent = t('alerts_view_all');
         updateDeckCards();
       }
     });
@@ -1631,6 +1961,9 @@ export function createNavbar(options) {
 
   // Initial render of alert deck
   updateDeckCards();
+
+  // Initialize with active language
+  updateNavbarLanguage(getLanguage());
 
   // GFS Day Chips Click Handler
   const gfsDayBtns = overlay.querySelectorAll('.gfs-day-btn');
@@ -1670,6 +2003,16 @@ export function createNavbar(options) {
       const d = parseInt(b.getAttribute('data-day'), 10);
       b.classList.toggle('active', d === dayIndex);
     });
+  };
+
+  // Expose helper to update telemetry data dynamically
+  overlay.updateData = ({ stations: newStations, dams: newDams, dohRoads: newDohRoads }) => {
+    if (Array.isArray(newStations) && newStations.length > 0) stations = newStations;
+    if (Array.isArray(newDams) && newDams.length > 0) dams = newDams;
+    if (newDohRoads) dohRoads = newDohRoads;
+    buildAlertItems();
+    updateNavbarLanguage(getLanguage());
+    updateDeckCards();
   };
 
   return overlay;

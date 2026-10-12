@@ -117,7 +117,7 @@ export function computeCurrentFloodPolygons(stations, basins = null) {
   };
 }
 
-export function compute7DayRiskPolygons(stations, basins = null) {
+export function compute7DayRiskPolygons(stations, basins = null, nwpData = null) {
   // Group at-risk stations (warning status or high river discharge) by province/river
   const atRiskStations = stations.filter((s) => {
     if (s.status !== 'warning' && s.situationLevel !== 4) return false;
@@ -161,7 +161,27 @@ export function compute7DayRiskPolygons(stations, basins = null) {
       coords = createRiverRiskZone(st.lng, st.lat, st, idx);
     }
 
-    const probPct = Math.min(90, Math.max(65, 70 + (idx % 4) * 5));
+    let rainCumulativeMm = 0;
+    if (Array.isArray(nwpData) && nwpData.length > 0) {
+      let bestDist = Infinity;
+      let bestNode = null;
+      for (const node of nwpData) {
+        const d = Math.hypot(node.lat - st.lat, node.lng - st.lng);
+        if (d < bestDist) {
+          bestDist = d;
+          bestNode = node;
+        }
+      }
+      if (bestNode && Array.isArray(bestNode.dailyForecasts)) {
+        rainCumulativeMm = Number(bestNode.dailyForecasts.reduce((sum, d) => sum + (d.ecmwf?.rainMm || 0), 0).toFixed(1));
+      }
+    }
+
+    const probPct = rainCumulativeMm > 0
+      ? Math.min(95, Math.max(55, Math.round(60 + (rainCumulativeMm / 150) * 35)))
+      : Math.min(90, Math.max(65, 70 + (idx % 4) * 5));
+
+    const rainNote = rainCumulativeMm > 10 ? ` คาดการณ์ฝนตกสะสม 7 วัน ${rainCumulativeMm} มม. (ECMWF IFS)` : '';
 
     return {
       type: 'Feature',
@@ -175,7 +195,8 @@ export function compute7DayRiskPolygons(stations, basins = null) {
         floodProbabilityPct: probPct,
         probabilityPct: probPct,
         predictedArrivalDay: '1-3 วันข้างหน้า',
-        recommendation: `ระดับน้ำใน ${st.river} มีแนวโน้มสูงขึ้นต่อเนื่องและใกล้ระดับตลิ่ง ขอให้ประชาชนในที่ลุ่มต่ำริมน้ำเตรียมพร้อมป้องกัน`,
+        cumulativeRainMm: rainCumulativeMm,
+        recommendation: `ระดับน้ำใน ${st.river} มีแนวโน้มสูงขึ้นต่อเนื่องและใกล้ระดับตลิ่ง${rainNote} ขอให้ประชาชนในที่ลุ่มต่ำริมน้ำเตรียมพร้อมป้องกัน`,
         source: 'กรมอุตุนิยมวิทยา TMD + สสน.'
       },
       geometry: {

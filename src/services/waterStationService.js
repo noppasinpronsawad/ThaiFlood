@@ -3,11 +3,34 @@
  * Fetches 100% Real Live Telemetry Data from National Hydroinformatics Data Center (HII / ThaiWater)
  * Covers ~1,406 telemetry water stations across Thailand
  */
+import { fetchWithSmartSwitching } from './telemetrySwitchService.js';
+import { THAI_PROVINCE_EN_MAP, BASIN_EN_MAP, AGENCY_EN_MAP } from './i18nService.js';
 
 const CACHE_KEY = 'thaiflood_stations_cache_v1';
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes cache
 
+export function getCachedWaterStations() {
+  if (typeof window !== 'undefined' && window.localStorage) {
+    try {
+      const cachedStr = localStorage.getItem(CACHE_KEY);
+      if (cachedStr) {
+        const cached = JSON.parse(cachedStr);
+        if (Array.isArray(cached.data) && cached.data.length > 0) {
+          return cached.data;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return null;
+}
+
 export async function fetchLiveWaterStations() {
+  return await fetchWithSmartSwitching('stations', fetchLiveWaterStationsDirect);
+}
+
+export async function fetchLiveWaterStationsDirect() {
   // 1. Check client-side cache to avoid spamming government servers
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
@@ -94,7 +117,7 @@ export function formatStationDateTime(dt) {
       const day = d.getDate();
       const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
       const month = months[d.getMonth()];
-      const year = d.getFullYear() + 543;
+      const year = d.getFullYear(); // Strictly CE / ค.ศ.
       const hours = String(d.getHours()).padStart(2, '0');
       const mins = String(d.getMinutes()).padStart(2, '0');
       return `${day} ${month} ${year} ${hours}:${mins} น.`;
@@ -217,12 +240,20 @@ function parseThaiWaterStations(rawList) {
       id: String(st.id || cleanCode),
       code: cleanCode,
       name: cleanFullName,
+      name_en: st.tele_station_name?.en || cleanFullName,
       shortName,
+      shortName_en: st.tele_station_name?.en || shortName,
       province,
+      province_en: item.geocode?.province_name?.en || THAI_PROVINCE_EN_MAP[province] || province,
       amphoe,
+      amphoe_en: item.geocode?.amphoe_name?.en || amphoe,
       tumbon,
+      tumbon_en: item.geocode?.tumbon_name?.en || tumbon,
       basin,
+      basin_en: item.basin?.basin_name?.en || BASIN_EN_MAP[basin] || basin,
       river,
+      agency,
+      agency_en: item.agency?.agency_shortname?.en || item.agency?.agency_name?.en || AGENCY_EN_MAP[agency] || agency,
       lat,
       lng,
       currentLevel: Number(currentLevel.toFixed(2)),

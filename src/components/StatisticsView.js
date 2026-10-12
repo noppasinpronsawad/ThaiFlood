@@ -1,0 +1,625 @@
+/**
+ * StatisticsView Component for ThaiFlood
+ * - Left Menubar / Sidebar (Desktop) & Responsive Segmented Tabs (Mobile Webview)
+ * - Tab 1: Statistic (API Availability, Last Attempt, Last Success, Record Count)
+ * - Tab 2: Download Log (Batch Date-range Picker, Max 30 Days, No Future Dates, ZIP download)
+ */
+import { zipSync, gunzipSync, strToU8 } from 'fflate';
+import { getLanguage, t, formatDateTimeCE } from '../services/i18nService.js';
+
+export function createStatisticsView(options = {}) {
+  const { onBackToMap } = options;
+
+  const container = document.createElement('div');
+  container.className = 'tf-stats-layout';
+  container.id = 'tf-stats-layout';
+
+  // Helper date functions
+  function getYesterdayDate() {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d;
+  }
+
+  function formatDateInput(d) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  const yesterdayStr = formatDateInput(getYesterdayDate());
+
+  let activeTab = 'statistic';
+  let metaData = null;
+  let archiveIndex = [];
+
+  container.innerHTML = `
+    <!-- Top Bar Navigation -->
+    <header class="tf-stats-header">
+      <div class="tf-stats-header-left">
+        <button class="tf-stats-back-btn" id="tf-stats-back-btn" type="button" title="กลับสู่แผนที่">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+            <path d="M19 12H5M5 12L12 19M5 12L12 5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>กลับสู่แผนที่</span>
+        </button>
+        <div class="tf-stats-brand">
+          <span class="tf-stats-logo">🌊</span>
+          <div class="tf-stats-titles">
+            <h1 class="tf-stats-main-title">ThaiFlood Statistics & Logs</h1>
+            <p class="tf-stats-sub-title">ระบบรายงานสถานะโทรมาตรและประวัติข้อมูลน้ำท่วมประเทศไทย</p>
+          </div>
+        </div>
+      </div>
+      <div class="tf-stats-header-right">
+        <span class="tf-stats-env-badge">UAT Environment (Port 3050)</span>
+      </div>
+    </header>
+
+    <div class="tf-stats-body">
+      <!-- Left Menubar / Sidebar -->
+      <aside class="tf-stats-sidebar">
+        <div class="tf-stats-menu-header">เมนูหลัก (Navigation)</div>
+        <nav class="tf-stats-nav">
+          <button class="tf-stats-nav-item active" data-tab="statistic" type="button">
+            <span class="nav-item-icon">📊</span>
+            <div class="nav-item-text">
+              <span class="nav-item-title">Statistic</span>
+              <span class="nav-item-desc">สถานะความพร้อมของ API</span>
+            </div>
+          </button>
+          <button class="tf-stats-nav-item" data-tab="download-log" type="button">
+            <span class="nav-item-icon">📦</span>
+            <div class="nav-item-text">
+              <span class="nav-item-title">Download Log</span>
+              <span class="nav-item-desc">ดาวน์โหลดไฟล์ย้อนหลัง (Zip)</span>
+            </div>
+          </button>
+        </nav>
+
+        <div class="tf-stats-sidebar-footer">
+          <div class="tf-sidebar-info">
+            <div class="info-row"><b>โหมดส่งข้อมูล:</b> In-Browser Zero Overhead</div>
+            <div class="info-row"><b>CDN แคช:</b> Cloudflare Edge</div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Content Pane -->
+      <main class="tf-stats-content">
+        <!-- 1. Statistic Tab Pane -->
+        <section class="tf-tab-pane active" id="pane-statistic">
+          <div class="tf-pane-header">
+            <div>
+              <h2 class="tf-pane-title">📊 สถานะความพร้อมของบริการ API (API Telemetry Health)</h2>
+              <p class="tf-pane-desc">ตรวจสอบความพร้อมของระบบเชื่อมต่อภายนอก เวลาที่เรียกข้อมูลล่าสุด เวลาที่สำเร็จล่าสุด และจำนวนรายการที่ได้รับ</p>
+            </div>
+            <button class="tf-btn-refresh" id="btn-refresh-stats" type="button">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M4 4V9H9M20 20V15H15M20 9A9 9 0 005.64 5.64L4 9M4 15A9 9 0 0018.36 18.36L20 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <span>รีเฟรชสถานะ</span>
+            </button>
+          </div>
+
+          <!-- Overall Summary Banner -->
+          <div class="tf-health-summary-card" id="tf-health-summary">
+            <div class="health-summary-loading">กำลังโหลดสถานะความพร้อมของระบบ...</div>
+          </div>
+
+          <!-- API Status Table -->
+          <div class="tf-table-responsive">
+            <table class="tf-stats-table">
+              <thead>
+                <tr>
+                  <th style="min-width: 220px;">บริการ & หน่วยงาน (Service / Agency)</th>
+                  <th style="min-width: 130px; text-align: center;">สถานะ (Status)</th>
+                  <th style="min-width: 170px;">วันเวลาที่เรียกข้อมูลล่าสุด</th>
+                  <th style="min-width: 170px;">วันเวลาที่เรียกข้อมูลสำเร็จล่าสุด</th>
+                  <th style="min-width: 120px; text-align: right;">จำนวนรายการ</th>
+                </tr>
+              </thead>
+              <tbody id="tf-stats-table-body">
+                <tr>
+                  <td colspan="5" style="text-align: center; padding: 32px; color: #94a3b8;">
+                    กำลังดึงข้อมูลสถานะ API...
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- 2. Download Log Tab Pane -->
+        <section class="tf-tab-pane" id="pane-download-log">
+          <div class="tf-pane-header">
+            <div>
+              <h2 class="tf-pane-title">📦 ดาวน์โหลดประวัติข้อมูลย้อนหลัง (Batch Log Download)</h2>
+              <p class="tf-pane-desc">ค้นหาตามช่วงวันที่และดาวน์โหลดไฟล์โทรมาตรย้อนหลังในรูปแบบ Zip (รองรับการดาวน์โหลดหลายวันพร้อมกัน สูงสุด 30 วัน)</p>
+            </div>
+          </div>
+
+          <!-- Datepicker Control Card -->
+          <div class="tf-download-controls-card">
+            <div class="tf-filter-grid">
+              <div class="tf-filter-group">
+                <label for="input-from-date">วันที่เริ่มต้น (From Date):</label>
+                <input 
+                  type="date" 
+                  id="input-from-date" 
+                  class="tf-date-input" 
+                  value="${yesterdayStr}" 
+                  max="${yesterdayStr}" 
+                />
+                <span class="tf-field-hint">ค่าเริ่มต้น: วันปัจจุบัน - 1 (ห้ามเลือกวันในอนาคต)</span>
+              </div>
+
+              <div class="tf-filter-group">
+                <label for="input-to-date">วันที่สิ้นสุด (To Date):</label>
+                <input 
+                  type="date" 
+                  id="input-to-date" 
+                  class="tf-date-input" 
+                  value="${yesterdayStr}" 
+                  max="${yesterdayStr}" 
+                />
+                <span class="tf-field-hint">ช่วงการเลือกสูงสุดไม่เกิน 30 วัน</span>
+              </div>
+
+              <div class="tf-filter-actions">
+                <button class="tf-btn-preset" id="btn-preset-yesterday" type="button">เมื่อวานนี้</button>
+                <button class="tf-btn-preset" id="btn-preset-7days" type="button">ย้อนหลัง 7 วัน</button>
+                <button class="tf-btn-preset" id="btn-preset-30days" type="button">ย้อนหลัง 30 วัน</button>
+              </div>
+            </div>
+
+            <!-- Validation Notice -->
+            <div class="tf-validation-alert" id="tf-date-alert" style="display: none;"></div>
+          </div>
+
+          <!-- Selected Files Manifest Card -->
+          <div class="tf-manifest-card">
+            <div class="manifest-card-header">
+              <div class="manifest-title-group">
+                <h3 class="manifest-title">รายการไฟล์ประวัติที่เลือกดาวน์โหลด</h3>
+                <span class="manifest-count-badge" id="manifest-count-badge">0 วัน</span>
+              </div>
+              <div class="manifest-size-info" id="manifest-size-info">ขนาดไฟล์รวมโดยประมาณ: 0 KB</div>
+            </div>
+
+            <div class="manifest-items-list" id="manifest-items-list">
+              <!-- Dynamically populated -->
+            </div>
+
+            <div class="manifest-card-footer">
+              <div class="download-progress-bar" id="download-progress-bar" style="display: none;">
+                <div class="progress-fill" id="progress-fill" style="width: 0%;"></div>
+                <span class="progress-label" id="progress-label">0%</span>
+              </div>
+              <div class="download-status-msg" id="download-status-msg"></div>
+
+              <button class="tf-btn-download-zip" id="btn-download-zip" type="button">
+                <span class="btn-zip-icon">📦</span>
+                <span>รวมและดาวน์โหลดไฟล์ (.zip)</span>
+              </button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  `;
+
+  // Attach Back to Map Listener
+  const backBtn = container.querySelector('#tf-stats-back-btn');
+  if (backBtn) {
+    backBtn.addEventListener('click', () => {
+      if (onBackToMap) {
+        onBackToMap();
+      } else {
+        window.history.pushState({}, '', '/');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }
+    });
+  }
+
+  // Sidebar Nav Tabs
+  const navItems = container.querySelectorAll('.tf-stats-nav-item');
+  const panes = container.querySelectorAll('.tf-tab-pane');
+
+  navItems.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const tab = btn.getAttribute('data-tab');
+      activeTab = tab;
+      navItems.forEach((b) => b.classList.toggle('active', b.getAttribute('data-tab') === tab));
+      panes.forEach((p) => p.classList.toggle('active', p.id === `pane-${tab}`));
+      if (tab === 'download-log') {
+        updateDateRangeManifest();
+      }
+    });
+  });
+
+  // Date Formatting Helper
+  function formatIsoDateTime(isoStr) {
+    if (!isoStr) return '<span style="color:#64748b;">ไม่มีข้อมูล</span>';
+    try {
+      const d = new Date(isoStr);
+      if (isNaN(d.getTime())) return isoStr;
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const hours = String(d.getHours()).padStart(2, '0');
+      const mins = String(d.getMinutes()).padStart(2, '0');
+      const secs = String(d.getSeconds()).padStart(2, '0');
+      return `${day}/${month}/${year} ${hours}:${mins}:${secs} น.`;
+    } catch {
+      return isoStr;
+    }
+  }
+
+  // Render Table & Summary for Tab 1 (Statistic)
+  async function loadStatisticsData() {
+    const summaryCard = container.querySelector('#tf-health-summary');
+    const tableBody = container.querySelector('#tf-stats-table-body');
+    if (!summaryCard || !tableBody) return;
+
+    summaryCard.innerHTML = `
+      <div class="health-summary-loading">
+        <span class="status-dot-blink"></span>
+        <span>กำลังเชื่อมต่อตรวจสอบสถานะระบบ...</span>
+      </div>
+    `;
+
+    try {
+      const res = await fetch('/api/meta.json?t=' + Date.now(), { cache: 'no-cache' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      metaData = await res.json();
+
+      const services = metaData.services || {};
+      const serviceKeys = Object.keys(services);
+
+      let upCount = 0;
+      let totalCount = serviceKeys.length;
+
+      serviceKeys.forEach((key) => {
+        if (services[key].status === 'UP') upCount++;
+      });
+
+      const isAllUp = upCount === totalCount && totalCount > 0;
+
+      // Summary Card
+      summaryCard.innerHTML = `
+        <div class="health-banner ${isAllUp ? 'banner-healthy' : 'banner-degraded'}">
+          <div class="banner-icon-box">${isAllUp ? '🟢' : '🟡'}</div>
+          <div class="banner-text-box">
+            <div class="banner-title">${isAllUp ? 'ทุกระบบพร้อมใช้งาน 100% (All Systems Operational)' : `มีบางระบบขัดข้องหรืออยู่ระหว่างตรวจสอบ (${upCount}/${totalCount})`}</div>
+            <div class="banner-meta">
+              <span>เวลาอัปเดตรอบล่าสุด: <b>${formatIsoDateTime(metaData.timestamp)}</b></span>
+              <span>·</span>
+              <span>พร้อมใช้งาน: <b style="color:#22c55e;">${upCount}</b> / ${totalCount} บริการ</span>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Table Rows
+      if (serviceKeys.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:24px;">ไม่พบข้อมูลบริการใน Metadata</td></tr>`;
+        return;
+      }
+
+      tableBody.innerHTML = serviceKeys.map((key) => {
+        const s = services[key];
+        const isUp = s.status === 'UP';
+        const countText = s.count !== undefined ? `${Number(s.count).toLocaleString()} รายการ` : '-';
+        
+        // Highlight stale warning if lastSuccess is different from lastAttempt
+        const isStale = isUp && s.lastSuccess && s.lastAttempt && (s.lastSuccess !== s.lastAttempt);
+
+        return `
+          <tr class="${isUp ? 'row-up' : 'row-down'}">
+            <td class="col-service">
+              <div class="service-name">${s.name || key}</div>
+              <div class="service-agency">${s.agency || '-'}</div>
+            </td>
+            <td class="col-status" style="text-align: center;">
+              <span class="status-pill ${isUp ? 'status-up' : 'status-down'}">
+                <span class="status-indicator"></span>
+                <span>${isUp ? 'พร้อมใช้งาน' : 'ไม่ตอบกลับ'}</span>
+              </span>
+            </td>
+            <td class="col-datetime">${formatIsoDateTime(s.lastAttempt)}</td>
+            <td class="col-datetime">
+              ${formatIsoDateTime(s.lastSuccess)}
+              ${isStale ? '<span class="stale-badge" title="ข้อมูลรอบล่าสุดไม่ตรงรอบสำเร็จ">Stale</span>' : ''}
+            </td>
+            <td class="col-count" style="text-align: right;">
+              <span class="count-badge">${countText}</span>
+            </td>
+          </tr>
+        `;
+      }).join('');
+
+    } catch (err) {
+      summaryCard.innerHTML = `
+        <div class="health-banner banner-down">
+          <div class="banner-icon-box">🔴</div>
+          <div class="banner-text-box">
+            <div class="banner-title">ไม่สามารถเชื่อมต่อไฟล์สถิติ /api/meta.json ได้</div>
+            <div class="banner-meta">ข้อผิดพลาด: ${err.message}</div>
+          </div>
+        </div>
+      `;
+      tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:24px; color:#ef4444;">เกิดข้อผิดพลาดในการโหลดข้อมูล</td></tr>`;
+    }
+  }
+
+  // Refresh Button
+  const refreshBtn = container.querySelector('#btn-refresh-stats');
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', () => {
+      loadStatisticsData();
+    });
+  }
+
+  // ==========================================
+  // TAB 2: Download Log Logic & Validation
+  // ==========================================
+  const fromInput = container.querySelector('#input-from-date');
+  const toInput = container.querySelector('#input-to-date');
+  const dateAlert = container.querySelector('#tf-date-alert');
+  const manifestItemsList = container.querySelector('#manifest-items-list');
+  const manifestCountBadge = container.querySelector('#manifest-count-badge');
+  const manifestSizeInfo = container.querySelector('#manifest-size-info');
+  const btnDownloadZip = container.querySelector('#btn-download-zip');
+  const progressBar = container.querySelector('#download-progress-bar');
+  const progressFill = container.querySelector('#progress-fill');
+  const progressLabel = container.querySelector('#progress-label');
+  const statusMsg = container.querySelector('#download-status-msg');
+
+  // Load Archive Index
+  async function loadArchiveIndex() {
+    try {
+      const res = await fetch('/api/archive-index.json?t=' + Date.now(), { cache: 'no-cache' });
+      if (res.ok) {
+        archiveIndex = await res.json();
+      }
+    } catch {
+      archiveIndex = [];
+    }
+  }
+
+  // Validate Date Range & Lock
+  function validateAndLockDates() {
+    const yesterday = getYesterdayDate();
+    const yStr = formatDateInput(yesterday);
+
+    let fromVal = fromInput.value;
+    let toVal = toInput.value;
+
+    let fromDate = new Date(fromVal);
+    let toDate = new Date(toVal);
+
+    // Rule 1: No Future Dates allowed
+    if (fromDate > yesterday) {
+      fromInput.value = yStr;
+      fromDate = yesterday;
+    }
+    if (toDate > yesterday) {
+      toInput.value = yStr;
+      toDate = yesterday;
+    }
+
+    // Rule 2: ToDate cannot be earlier than FromDate
+    if (toDate < fromDate) {
+      toInput.value = fromInput.value;
+      toDate = fromDate;
+    }
+
+    // Rule 3: Max 30 Days range limit
+    const diffTime = toDate.getTime() - fromDate.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+
+    if (diffDays > 30) {
+      // Clamp ToDate to fromDate + 29 days or yesterday, whichever is smaller
+      const maxAllowedDate = new Date(fromDate);
+      maxAllowedDate.setDate(maxAllowedDate.getDate() + 29);
+      const clampedDate = maxAllowedDate > yesterday ? yesterday : maxAllowedDate;
+      toInput.value = formatDateInput(clampedDate);
+      
+      dateAlert.style.display = 'block';
+      dateAlert.textContent = `⚠️ ระบบจำกัดการเลือกช่วงวันสูงสุดไม่เกิน 30 วัน (ระบบได้ปรับวันที่สิ้นสุดเป็น ${formatDateInput(clampedDate)} ให้อัตโนมัติ)`;
+    } else {
+      dateAlert.style.display = 'none';
+    }
+  }
+
+  // Compute List of Dates in Range
+  function getDatesInRange(startStr, endStr) {
+    const dates = [];
+    let curr = new Date(startStr);
+    const end = new Date(endStr);
+    while (curr <= end) {
+      dates.push(formatDateInput(curr));
+      curr.setDate(curr.getDate() + 1);
+    }
+    return dates;
+  }
+
+  // Update Manifest List for Selected Range
+  function updateDateRangeManifest() {
+    validateAndLockDates();
+
+    const fromVal = fromInput.value;
+    const toVal = toInput.value;
+    const dateRange = getDatesInRange(fromVal, toVal);
+
+    const totalDays = dateRange.length;
+    manifestCountBadge.textContent = `${totalDays} วัน`;
+
+    // Calculate approximate size (~119 KB per day)
+    let totalEstimatedBytes = 0;
+
+    const itemsHTML = dateRange.map((dateStr) => {
+      const matchIndex = archiveIndex.find((a) => a.date === dateStr);
+      const sizeBytes = matchIndex ? matchIndex.sizeBytes : 119110;
+      totalEstimatedBytes += sizeBytes;
+      const sizeKb = (sizeBytes / 1024).toFixed(1);
+
+      return `
+        <div class="manifest-item" data-date="${dateStr}">
+          <div class="manifest-item-left">
+            <span class="item-icon">📄</span>
+            <div class="item-info">
+              <span class="item-filename">telemetry-${dateStr}.json.gz</span>
+              <span class="item-date">ข้อมูลประจำวันที่: ${dateStr}</span>
+            </div>
+          </div>
+          <div class="manifest-item-right">
+            <span class="item-size">~${sizeKb} KB</span>
+            <span class="item-tag">${matchIndex ? 'พร้อมดาวน์โหลด' : 'คาดการณ์'}</span>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    manifestItemsList.innerHTML = itemsHTML;
+    manifestSizeInfo.textContent = `ขนาดไฟล์รวมโดยประมาณ: ${(totalEstimatedBytes / 1024).toFixed(1)} KB (${(totalEstimatedBytes / (1024 * 1024)).toFixed(2)} MB)`;
+  }
+
+  // Date Input Listeners
+  fromInput.addEventListener('change', () => {
+    updateDateRangeManifest();
+  });
+  toInput.addEventListener('change', () => {
+    updateDateRangeManifest();
+  });
+
+  // Presets
+  container.querySelector('#btn-preset-yesterday')?.addEventListener('click', () => {
+    fromInput.value = yesterdayStr;
+    toInput.value = yesterdayStr;
+    updateDateRangeManifest();
+  });
+
+  container.querySelector('#btn-preset-7days')?.addEventListener('click', () => {
+    const d = getYesterdayDate();
+    d.setDate(d.getDate() - 6);
+    fromInput.value = formatDateInput(d);
+    toInput.value = yesterdayStr;
+    updateDateRangeManifest();
+  });
+
+  container.querySelector('#btn-preset-30days')?.addEventListener('click', () => {
+    const d = getYesterdayDate();
+    d.setDate(d.getDate() - 29);
+    fromInput.value = formatDateInput(d);
+    toInput.value = yesterdayStr;
+    updateDateRangeManifest();
+  });
+
+  // Batch Download & In-Browser Zipping
+  btnDownloadZip?.addEventListener('click', async () => {
+    const fromVal = fromInput.value;
+    const toVal = toInput.value;
+    const dateRange = getDatesInRange(fromVal, toVal);
+
+    if (dateRange.length === 0) return;
+
+    btnDownloadZip.disabled = true;
+    progressBar.style.display = 'block';
+    progressFill.style.width = '0%';
+    progressLabel.textContent = '0%';
+    statusMsg.className = 'download-status-msg msg-info';
+    statusMsg.textContent = `🚀 เริ่มต้นดาวน์โหลดข้อมูลโทรมาตร ${dateRange.length} รายการ...`;
+
+    const zipFiles = {};
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < dateRange.length; i++) {
+      const dateStr = dateRange[i];
+      const filename = `telemetry-${dateStr}.json.gz`;
+      const url = `/archive/${filename}`;
+
+      const pct = Math.round(((i + 0.5) / dateRange.length) * 80);
+      progressFill.style.width = `${pct}%`;
+      progressLabel.textContent = `${pct}%`;
+      statusMsg.textContent = `กำลังดึงไฟล์: ${filename} (${i + 1}/${dateRange.length})...`;
+
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          const buffer = await res.arrayBuffer();
+          const u8 = new Uint8Array(buffer);
+
+          // Try decompressing to give user ready-to-read .json inside zip
+          try {
+            const decompressed = gunzipSync(u8);
+            zipFiles[`telemetry-${dateStr}.json`] = decompressed;
+          } catch {
+            // Fallback to storing gz directly
+            zipFiles[filename] = u8;
+          }
+          successCount++;
+        } else {
+          // If past file does not exist, note it in a manifest log
+          zipFiles[`telemetry-${dateStr}-missing.txt`] = strToU8(`Data archive for ${dateStr} was not present on server (HTTP ${res.status}).`);
+          failCount++;
+        }
+      } catch (err) {
+        zipFiles[`telemetry-${dateStr}-error.txt`] = strToU8(`Error fetching archive for ${dateStr}: ${err.message}`);
+        failCount++;
+      }
+    }
+
+    // Add Readme / Metadata to zip
+    zipFiles['README.txt'] = strToU8(
+      `ThaiFlood Telemetry Export\n` +
+      `Date Range: ${fromVal} to ${toVal} (${dateRange.length} days)\n` +
+      `Export Timestamp: ${new Date().toISOString()}\n` +
+      `Successful archives: ${successCount}\n` +
+      `Missing/Error: ${failCount}\n` +
+      `Data Sources: HII / ThaiWater, EGAT, DOH Highways, CCTV Feeds, TMD Radar, Open-Meteo\n`
+    );
+
+    statusMsg.textContent = `📦 กำลังบีบอัดเป็นไฟล์ ZIP (In-Browser fflate)...`;
+    progressFill.style.width = '90%';
+    progressLabel.textContent = '90%';
+
+    try {
+      // In-browser Zip synthesis
+      const zippedBuffer = zipSync(zipFiles, { level: 6 });
+
+      progressFill.style.width = '100%';
+      progressLabel.textContent = '100%';
+      statusMsg.className = 'download-status-msg msg-success';
+      statusMsg.textContent = `✅ บีบอัดสำเร็จ! ดาวน์โหลดไฟล์ thaiflood-telemetry-${fromVal}-to-${toVal}.zip (${(zippedBuffer.length / 1024).toFixed(1)} KB)`;
+
+      // Trigger Browser Download
+      const blob = new Blob([zippedBuffer], { type: 'application/zip' });
+      const downloadUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `thaiflood-telemetry-${fromVal}-to-${toVal}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(downloadUrl);
+    } catch (err) {
+      statusMsg.className = 'download-status-msg msg-error';
+      statusMsg.textContent = `❌ เกิดข้อผิดพลาดในการรวมไฟล์ Zip: ${err.message}`;
+    } finally {
+      btnDownloadZip.disabled = false;
+    }
+  });
+
+  // Initial load
+  loadStatisticsData();
+  loadArchiveIndex().then(() => {
+    updateDateRangeManifest();
+  });
+
+  return container;
+}
+

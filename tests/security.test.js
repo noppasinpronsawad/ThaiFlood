@@ -125,4 +125,62 @@ test('No Hardcoded Private Credentials or Secret Keys in Frontend', () => {
   });
 });
 
+// 6. SEC-06: HTTPS-Only Strict Transport for Media & CCTV
+test('SEC-06: Enforce HTTPS-Only for CCTV feeds, radar and media resources', async () => {
+  const cctvService = await import(path.join(rootDir, 'src/services/cctvService.js'));
+  const geo = await cctvService.getCctvGeoJSON();
+  assert(geo && geo.features.length > 0, 'CCTV features must exist');
+  geo.features.forEach((feat) => {
+    const url = feat.properties.snapshotUrl;
+    if (url) {
+      assert(url.startsWith('https://'), `CCTV snapshot URL must use HTTPS: ${url}`);
+      assert(!url.startsWith('http://'), `Insecure HTTP forbidden for CCTV snapshot: ${url}`);
+    }
+  });
+});
+
+// 7. SEC-07: XSS Injection Prevention in CCTV Place Sheet
+test('SEC-07: Anti-XSS Sanitization & Escaping in CCTV Place Sheet', () => {
+  const stationListCode = fs.readFileSync(path.join(rootDir, 'src/components/WaterStationList.js'), 'utf-8');
+  assert(stationListCode.includes('renderCctvSheet'), 'WaterStationList must implement renderCctvSheet');
+  assert(!stationListCode.includes('innerHTML = cam.name'), 'Raw innerHTML assignment to unescaped name is forbidden');
+});
+
+// 8. SEC-08: Zero Hardcoded Private Credentials & Keys
+test('SEC-08: Strict Scan for Private Keys, Tokens, and Cloud Credentials across src', () => {
+  const filesToScan = [
+    'src/services/cctvService.js',
+    'src/services/dohHighwayFloodService.js',
+    'src/services/traffyFondueService.js',
+    'src/services/damService.js',
+    'src/services/waterStationService.js'
+  ];
+  const forbiddenPatterns = [
+    /AKIA[0-9A-Z]{16}/,
+    /ghp_[0-9a-zA-Z]{36}/,
+    /eyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}/,
+    /sk-[a-zA-Z0-9]{32,}/
+  ];
+  filesToScan.forEach((rel) => {
+    const content = fs.readFileSync(path.join(rootDir, rel), 'utf-8');
+    forbiddenPatterns.forEach((regex) => {
+      assert(!regex.test(content), `Sensitive key pattern found in ${rel}`);
+    });
+  });
+});
+
+// 9. SEC-09: Safe On-Demand Image Handling & Origin Policy
+test('SEC-09: Safe On-Demand Image Handling & Referrer Policy in Place Sheet', () => {
+  const stationListCode = fs.readFileSync(path.join(rootDir, 'src/components/WaterStationList.js'), 'utf-8');
+  assert(stationListCode.includes('referrerpolicy="no-referrer"'), 'CCTV images must specify referrerpolicy="no-referrer"');
+  assert(stationListCode.includes('loading="lazy"'), 'CCTV images must specify loading="lazy"');
+});
+
+// 10. SEC-10: Defense against Clickjacking and Inline Event execution
+test('SEC-10: Defense against Clickjacking and Inline Event execution', () => {
+  const mainCode = fs.readFileSync(path.join(rootDir, 'src/main.js'), 'utf-8');
+  assert(!mainCode.includes('javascript:'), 'Javascript pseudo-protocol forbidden in main.js');
+  assert(!mainCode.includes('eval('), 'eval forbidden in main.js');
+});
+
 console.log(`\n🎉 Security Tests Completed: ${passedTests} passed.\n`);
