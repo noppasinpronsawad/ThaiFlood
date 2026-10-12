@@ -15,14 +15,19 @@ on:
 jobs:
   sync-data:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install Dependencies
         run: npm ci
@@ -34,10 +39,11 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add --force public/api/*.json
+          git add --force public/api/ public/archive/
           if git diff --staged --quiet; then
             echo "No telemetry changes detected."
           else
             git commit -m "chore(telemetry): automated edge cache sync [skip ci]"
-            git push
+            git pull --rebase origin main || true
+            git push origin HEAD:main
           fi
