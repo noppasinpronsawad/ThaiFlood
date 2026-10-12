@@ -11,10 +11,6 @@ import { fetchLiveDamsDirect } from '../services/damService.js';
 import { getDohHighwayGeoJSONDirect } from '../services/dohHighwayFloodService.js';
 import { getCctvGeoJSONDirect } from '../services/cctvService.js';
 
-// Module-level Diagnostic Cache (prevents spamming external gov APIs on every navigation)
-let cachedDiagnosticResult = null;
-const DIAGNOSTIC_CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes TTL
-
 export function createStatisticsView(options = {}) {
   const { onBackToMap } = options;
 
@@ -44,6 +40,7 @@ export function createStatisticsView(options = {}) {
 
   let activeTab = 'statistic';
   let metaData = null;
+  let officialCronTimestamp = null;
   let archiveIndex = [];
 
   container.innerHTML = `
@@ -107,11 +104,11 @@ export function createStatisticsView(options = {}) {
               <h2 class="tf-pane-title">📊 สถานะความพร้อมของบริการ API (API Telemetry Health)</h2>
               <p class="tf-pane-desc">ตรวจสอบความพร้อมของระบบเชื่อมต่อภายนอก เวลาที่เรียกข้อมูลล่าสุด เวลาที่สำเร็จล่าสุด และจำนวนรายการที่ได้รับ</p>
             </div>
-            <button class="tf-btn-refresh" id="btn-refresh-stats" type="button">
+            <button class="tf-btn-refresh" id="btn-refresh-stats" type="button" title="ทดสอบยิง API สด (ต้องใช้รหัสผ่าน Admin)">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                 <path d="M4 4V9H9M20 20V15H15M20 9A9 9 0 005.64 5.64L4 9M4 15A9 9 0 0018.36 18.36L20 15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
               </svg>
-              <span>รีเฟรชสถานะ</span>
+              <span>รีเฟรชสถานะ (Admin)</span>
             </button>
           </div>
 
@@ -270,7 +267,7 @@ export function createStatisticsView(options = {}) {
   }
 
   // Render Summary & Rows for Tab 1 (Statistic)
-  function renderStatisticsTable(data, isLiveDirect = false) {
+  function renderStatisticsTable(data, isAdminTest = false) {
     const summaryCard = container.querySelector('#tf-health-summary');
     const tableBody = container.querySelector('#tf-stats-table-body');
     if (!summaryCard || !tableBody) return;
@@ -288,21 +285,41 @@ export function createStatisticsView(options = {}) {
     const isAllUp = upCount === totalCount && totalCount > 0;
 
     // Summary Card
-    summaryCard.innerHTML = `
-      <div class="health-banner ${isAllUp ? 'banner-healthy' : 'banner-degraded'}">
-        <div class="banner-icon-box">${isAllUp ? '🟢' : '🟡'}</div>
-        <div class="banner-text-box">
-          <div class="banner-title">${isAllUp ? 'ทุกระบบพร้อมใช้งาน 100% (All Systems Operational)' : `มีบางระบบขัดข้องหรืออยู่ระหว่างตรวจสอบ (${upCount}/${totalCount})`}</div>
-          <div class="banner-meta">
-            <span>เวลาตรวจสอบ: <b>${formatIsoDateTime(data.timestamp)}</b></span>
-            <span>·</span>
-            <span>พร้อมใช้งาน: <b style="color:#22c55e;">${upCount}</b> / ${totalCount} บริการ</span>
-            <span>·</span>
-            <span style="color:${isLiveDirect ? '#38bdf8' : '#a78bfa'}; font-weight:600;">${isLiveDirect ? '⚡ ยิง API สดตรง (Real-time Live Direct Ping)' : '🚀 Edge Cache (< 60 นาที)'}</span>
+    if (isAdminTest) {
+      summaryCard.innerHTML = `
+        <div class="health-banner banner-healthy">
+          <div class="banner-icon-box">🧪</div>
+          <div class="banner-text-box">
+            <div class="banner-title">ผลการทดสอบสดโดยผู้ดูแลระบบ (Admin Diagnostic Test)</div>
+            <div class="banner-meta">
+              <span>เวลาทดสอบ (Admin Ping): <b>${formatIsoDateTime(data.timestamp)}</b></span>
+              <span>·</span>
+              <span>เวลารอบ Cron ล่าสุด: <b>${formatIsoDateTime(officialCronTimestamp || 'รอรอบซิงก์ถัดไป')}</b></span>
+              <span>·</span>
+              <span>พร้อมใช้งาน: <b style="color:#22c55e;">${upCount}</b> / ${totalCount} บริการ</span>
+              <span>·</span>
+              <span style="color:#38bdf8; font-weight:600;">🔒 ยืนยันสิทธิ์ผู้ดูแลระบบสำเร็จ (Admin Verified)</span>
+            </div>
           </div>
         </div>
-      </div>
-    `;
+      `;
+    } else {
+      summaryCard.innerHTML = `
+        <div class="health-banner ${isAllUp ? 'banner-healthy' : 'banner-degraded'}">
+          <div class="banner-icon-box">${isAllUp ? '🟢' : '🟡'}</div>
+          <div class="banner-text-box">
+            <div class="banner-title">${isAllUp ? 'ทุกระบบพร้อมใช้งาน 100% (All Systems Operational)' : `มีบางระบบขัดข้องหรืออยู่ระหว่างตรวจสอบ (${upCount}/${totalCount})`}</div>
+            <div class="banner-meta">
+              <span>เวลารอบ Cron ล่าสุด: <b>${formatIsoDateTime(data.timestamp)}</b></span>
+              <span>·</span>
+              <span>พร้อมใช้งาน: <b style="color:#22c55e;">${upCount}</b> / ${totalCount} บริการ</span>
+              <span>·</span>
+              <span style="color:#a78bfa; font-weight:600;">🚀 ข้อมูลจากรอบ Cron อัตโนมัติ (Edge Cache)</span>
+            </div>
+          </div>
+        </div>
+      `;
+    }
 
     // Table Rows
     if (serviceKeys.length === 0) {
@@ -530,56 +547,210 @@ export function createStatisticsView(options = {}) {
 
     metaData = {
       timestamp: nowIso,
-      mode: 'live-direct',
+      mode: 'admin-diagnostic',
       services
     };
-    cachedDiagnosticResult = metaData;
 
     renderStatisticsTable(metaData, true);
   }
 
-  // Load Statistics Data: Uses fresh Edge cache if available, or falls back to Live Direct Diagnostics
-  async function loadStatisticsData(forceDirectPing = false) {
-    if (forceDirectPing) {
-      await runLiveDiagnostics();
-      return;
+  // Render Standby table when no cron data is present yet (STRICTLY ZERO EXTERNAL REQUESTS)
+  function renderStandbyTable() {
+    const summaryCard = container.querySelector('#tf-health-summary');
+    const tableBody = container.querySelector('#tf-stats-table-body');
+    if (!summaryCard || !tableBody) return;
+
+    summaryCard.innerHTML = `
+      <div class="health-banner banner-standby">
+        <div class="banner-icon-box">⏳</div>
+        <div class="banner-text-box">
+          <div class="banner-title">ระบบโทรมาตร Edge CDN รอรับข้อมูลจากรอบ Cron (ทุก 10 นาที)</div>
+          <div class="banner-meta">
+            <span>โหมด: Edge Cache</span>
+            <span>·</span>
+            <span>ระบบทำงานอัตโนมัติทุก 10 นาทีเพื่อปกป้องเซิร์ฟเวอร์รัฐ (กดปุ่ม 'รีเฟรชสถานะ (Admin)' หากต้องการยิงทดสอบสด)</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    const standbyServices = [
+      { name: "สถานีโทรมาตรวัดระดับน้ำ", agency: "สสน. (HII / ThaiWater)" },
+      { name: "ปริมาณน้ำในอ่างเก็บน้ำ/เขื่อน", agency: "กฟผ. / สสน. (EGAT / HII)" },
+      { name: "รายงานน้ำท่วมทางหลวง", agency: "กรมทางหลวง (DOH)" },
+      { name: "กล้อง CCTV ทางหลวงและจุดตรวจน้ำ", agency: "กรมทางหลวง / กทม. / กรมชลฯ" },
+      { name: "แบบจำลองพยากรณ์ ECMWF & GFS", agency: "Open-Meteo Supercomputer" },
+      { name: "รายงานน้ำท่วมขัง Traffy Fondue", agency: "สวทช. / กรุงเทพมหานคร" },
+      { name: "เรดาร์ตรวจฝนตรวจสภาพอากาศ", agency: "กรมอุตุนิยมวิทยา (TMD)" }
+    ];
+
+    tableBody.innerHTML = standbyServices.map((s) => `
+      <tr class="row-standby">
+        <td class="col-service">
+          <div class="service-name">${s.name}</div>
+          <div class="service-agency">${s.agency}</div>
+        </td>
+        <td class="col-status" style="text-align: center;">
+          <span class="status-pill status-standby">
+            <span class="status-indicator" style="background:#94a3b8;"></span>
+            <span>รอรอบซิงก์</span>
+          </span>
+        </td>
+        <td class="col-datetime" style="color:#64748b;">รอรอบถัดไป</td>
+        <td class="col-datetime" style="color:#64748b;">-</td>
+        <td class="col-count" style="text-align: right; color:#64748b;">-</td>
+      </tr>
+    `).join('');
+  }
+
+  // Load Statistics Data on normal page entry: Strictly reads Edge cache, NEVER fires external API calls
+  async function loadStatisticsData() {
+    const summaryCard = container.querySelector('#tf-health-summary');
+    if (summaryCard) {
+      summaryCard.innerHTML = `
+        <div class="health-summary-loading">
+          <span class="status-dot-blink"></span>
+          <span>กำลังเชื่อมต่อไฟล์สถิติจาก Edge CDN...</span>
+        </div>
+      `;
     }
 
-    // 1. Check in-memory live diagnostic cache (< 3 minutes old)
-    if (cachedDiagnosticResult && (Date.now() - new Date(cachedDiagnosticResult.timestamp).getTime() < DIAGNOSTIC_CACHE_TTL_MS)) {
-      metaData = cachedDiagnosticResult;
-      renderStatisticsTable(metaData, true);
-      return;
-    }
-
-    // 2. Try fresh Edge cache from bot (< 60 minutes old)
     try {
       const res = await fetch('/api/meta.json?t=' + Date.now(), { cache: 'no-cache' });
       if (res.ok) {
         const data = await res.json();
         if (data && data.timestamp && data.services) {
-          const ageMs = Date.now() - new Date(data.timestamp).getTime();
-          // If fresh (< 60 minutes old), render cached telemetry
-          if (ageMs >= 0 && ageMs < 60 * 60 * 1000) {
-            metaData = data;
-            renderStatisticsTable(metaData, false);
-            return;
-          }
+          officialCronTimestamp = data.timestamp;
+          metaData = data;
+          renderStatisticsTable(metaData, false);
+          return;
         }
       }
     } catch {
-      // ignore fetch error and seamlessly fallback to live diagnostics
+      // ignore fetch error and gracefully show standby table
     }
 
-    // 3. Fallback: 100% Real-time Live Direct Telemetry Ping
-    await runLiveDiagnostics();
+    // STRICT: หน้า Status ห้ามยิง API ตอนกดเข้าหน้าปกติ!
+    renderStandbyTable();
   }
 
-  // Refresh Button - Always triggers fresh live API diagnostic call
+  // One-Way Salted Cryptographic Hash Verification (Web Crypto API SHA-256)
+  // Zero plaintext password stored in code, git, or client bundle
+  const ADMIN_AUTH_SALT = 'tf_admin_auth_v1_secure_salt_77a9';
+  const ADMIN_AUTH_DIGEST = 'edcbb34f1966804e485761775dc7ab80c637f1fe751a2867dbad397c3723c13f';
+
+  async function verifyAdminSecret(inputStr) {
+    if (!inputStr || typeof inputStr !== 'string') return false;
+    try {
+      const encoder = new TextEncoder();
+      const data = encoder.encode(ADMIN_AUTH_SALT + inputStr + ADMIN_AUTH_SALT);
+      const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+      const hashArray = Array.from(new Uint8Array(hashBuffer));
+      const hashHex = hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
+      return hashHex === ADMIN_AUTH_DIGEST;
+    } catch {
+      return false;
+    }
+  }
+
+  // Admin Password Authentication Modal
+  function promptAdminAuth(onSuccess) {
+    const existingModal = document.getElementById('admin-auth-modal');
+    if (existingModal) existingModal.remove();
+
+    const modal = document.createElement('div');
+    modal.className = 'tf-modal-backdrop';
+    modal.id = 'admin-auth-modal';
+
+    modal.innerHTML = `
+      <div class="tf-modal-card">
+        <div class="tf-modal-header">
+          <div class="tf-modal-title-group">
+            <span style="font-size: 18px;">🔒</span>
+            <h3 class="tf-modal-title">ยืนยันสิทธิ์ผู้ดูแลระบบ (Admin Diagnostic Test)</h3>
+          </div>
+          <button type="button" class="tf-modal-close" id="btn-admin-modal-close" title="ปิด">✕</button>
+        </div>
+        <div class="tf-modal-body">
+          <p class="tf-modal-desc">
+            การกดรีเฟรชเพื่อยิงทดสอบระบบสด (Live Diagnostic Ping) จะส่งคำขอทดสอบไปยัง API หน่วยงานรัฐจริงทั้ง 7 แห่งโดยตรง 
+            เพื่อป้องกันการส่ง Request โดยไม่จำเป็น โปรดระบุรหัสผ่านผู้ดูแลระบบ:
+          </p>
+          <div class="tf-input-group">
+            <input 
+              type="password" 
+              id="input-admin-password" 
+              class="tf-admin-pass-input" 
+              placeholder="กรอกรหัสผ่านผู้ดูแลระบบ..."
+              autocomplete="off"
+            />
+            <div class="tf-admin-pass-error" id="admin-pass-error" style="display: none;"></div>
+          </div>
+        </div>
+        <div class="tf-modal-footer">
+          <button type="button" class="tf-btn-modal-cancel" id="btn-admin-cancel">ยกเลิก</button>
+          <button type="button" class="tf-btn-modal-confirm" id="btn-admin-confirm">ยืนยันและทดสอบสด</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    const input = modal.querySelector('#input-admin-password');
+    const errEl = modal.querySelector('#admin-pass-error');
+    const btnConfirm = modal.querySelector('#btn-admin-confirm');
+    const btnCancel = modal.querySelector('#btn-admin-cancel');
+    const btnClose = modal.querySelector('#btn-admin-modal-close');
+
+    setTimeout(() => input?.focus(), 50);
+
+    function closeModal() {
+      modal.remove();
+    }
+
+    async function verifyAndSubmit() {
+      const val = input.value.trim();
+      btnConfirm.disabled = true;
+      btnConfirm.textContent = 'กำลังตรวจสอบ...';
+      const isValid = await verifyAdminSecret(val);
+      if (isValid) {
+        closeModal();
+        onSuccess();
+      } else {
+        btnConfirm.disabled = false;
+        btnConfirm.textContent = 'ยืนยันและทดสอบสด';
+        errEl.textContent = '⚠️ รหัสผ่านไม่ถูกต้อง (Unauthorized) ไม่สามารถยิงทดสอบระบบได้';
+        errEl.style.display = 'block';
+        input.style.borderColor = '#ef4444';
+        input.focus();
+        input.select();
+      }
+    }
+
+    btnConfirm.addEventListener('click', verifyAndSubmit);
+    btnCancel.addEventListener('click', closeModal);
+    btnClose.addEventListener('click', closeModal);
+
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        verifyAndSubmit();
+      } else if (e.key === 'Escape') {
+        closeModal();
+      }
+    });
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) closeModal();
+    });
+  }
+
+  // Refresh Button - Prompts for Admin password verification before triggering on-demand ping
   const refreshBtn = container.querySelector('#btn-refresh-stats');
   if (refreshBtn) {
     refreshBtn.addEventListener('click', () => {
-      loadStatisticsData(true);
+      promptAdminAuth(() => {
+        runLiveDiagnostics();
+      });
     });
   }
 

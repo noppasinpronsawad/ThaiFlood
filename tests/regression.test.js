@@ -1824,6 +1824,10 @@ async function runAllTests() {
     assert.ok(statsViewCode.includes('diffDays > 30'), 'StatisticsView.js must enforce 30-day limit');
     assert.ok(statsViewCode.includes('getYesterdayDate'), 'StatisticsView.js must default to yesterday');
     assert.ok(statsViewCode.includes('thaiflood-telemetry'), 'StatisticsView.js must trigger zip download');
+    assert.ok(statsViewCode.includes('verifyAdminSecret'), 'StatisticsView.js must implement verifyAdminSecret');
+    assert.ok(statsViewCode.includes('ADMIN_AUTH_DIGEST'), 'StatisticsView.js must enforce salted SHA-256 hash verification');
+    assert.ok(statsViewCode.includes('promptAdminAuth'), 'StatisticsView.js must include promptAdminAuth');
+    assert.ok(statsViewCode.includes('renderStandbyTable'), 'StatisticsView.js must implement renderStandbyTable for normal visits');
 
     // 6. CSS Styles verification
     const cssCode = fs.readFileSync(path.join(rootDir, 'src/index.css'), 'utf-8');
@@ -1831,6 +1835,8 @@ async function runAllTests() {
     assert.ok(cssCode.includes('.btn-statistics-link'), 'index.css must style .btn-statistics-link');
     assert.ok(cssCode.includes('.tf-stats-table'), 'index.css must style .tf-stats-table');
     assert.ok(cssCode.includes('.tf-btn-download-zip'), 'index.css must style .tf-btn-download-zip');
+    assert.ok(cssCode.includes('.tf-modal-backdrop'), 'index.css must style .tf-modal-backdrop');
+    assert.ok(cssCode.includes('.tf-admin-pass-input'), 'index.css must style .tf-admin-pass-input');
   });
 
   console.log(`\n🎉 Regression Tests Completed: ${passedTests} passed.\n`);
