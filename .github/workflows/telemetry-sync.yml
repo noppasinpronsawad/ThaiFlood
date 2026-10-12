@@ -8,8 +8,8 @@ on:
       - 'public/api/**'
       - 'public/archive/**'
   schedule:
-    # Run every 10 minutes to protect government APIs and maintain fresh Edge CDN cache
-    - cron: '*/10 * * * *'
+    # Run every 10 minutes with 2-minute offset to avoid GitHub runner queue congestion
+    - cron: '2,12,22,32,42,52 * * * *'
   workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:

@@ -204,12 +204,10 @@ async function syncAll() {
 
   // 4c. Traffy Fondue Open API (Live Crowd-sourced Flood Reports)
   try {
-    const tfRes = await fetch('https://publicapi.traffy.in.th/share/teamchadchart/search?type=%E0%B8%99%E0%B9%89%E0%B8%B3%E0%B8%97%E0%B9%88%E0%B8%A7%E0%B8%A1&limit=35', {
-      signal: AbortSignal.timeout(10000)
-    });
-    if (tfRes.ok) {
-      const tfData = await tfRes.json();
-      const count = tfData?.results ? tfData.results.length : (Array.isArray(tfData) ? tfData.length : 0);
+    const { getTraffyFloodGeoJSON } = await import('../src/services/traffyFondueService.js');
+    const tfData = await getTraffyFloodGeoJSON();
+    const count = tfData?.features ? tfData.features.length : 0;
+    if (count > 0) {
       services.traffy.status = "UP";
       services.traffy.lastSuccess = now.toISOString();
       services.traffy.count = count;

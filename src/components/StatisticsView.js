@@ -512,12 +512,10 @@ export function createStatisticsView(options = {}) {
       // 6. Traffy Fondue
       (async () => {
         try {
-          const res = await fetch('https://publicapi.traffy.in.th/share/teamchadchart/search?type=%E0%B8%99%E0%B9%89%E0%B8%B3%E0%B8%97%E0%B9%88%E0%B8%A7%E0%B8%A1&limit=35', {
-            signal: AbortSignal.timeout(8000)
-          });
-          if (res.ok) {
-            const json = await res.json();
-            const count = json?.results ? json.results.length : (Array.isArray(json) ? json.length : 0);
+          const { getTraffyFloodGeoJSON } = await import('../services/traffyFondueService.js');
+          const tfData = await getTraffyFloodGeoJSON();
+          const count = tfData?.features ? tfData.features.length : 0;
+          if (count > 0) {
             services.traffy.status = 'UP';
             services.traffy.lastSuccess = nowIso;
             services.traffy.count = count;
