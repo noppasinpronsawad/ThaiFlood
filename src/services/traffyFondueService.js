@@ -6,6 +6,7 @@ import { realTraffySnapshot } from '../data/traffyLiveSnapshot.js';
  * ZERO MOCK DATA: Never injects fake or synthetic flood incidents.
  */
 
+const TRAFFY_LIVE_API_URL = 'https://api.traffy.in.th/postgrest/rpc/get_bkk_geojson_feed?p_limit=300';
 const TRAFFY_API_URL = 'https://publicapi.traffy.in.th/share/teamchadchart/search?type=%E0%B8%99%E0%B9%89%E0%B8%B3%E0%B8%97%E0%B9%88%E0%B8%A7%E0%B8%A1&limit=35';
 const TRAFFY_CACHE_KEY = 'thaiflood_traffy_live_cache_v2';
 const TRAFFY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 mins
@@ -116,7 +117,8 @@ export async function getTraffyFloodGeoJSON() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 20000);
 
-    const res = await fetch(TRAFFY_API_URL, {
+    // 1. Primary: Official Live Traffy Fondue BMA Feed
+    const res = await fetch(TRAFFY_LIVE_API_URL, {
       signal: controller.signal,
       headers: { Accept: 'application/json' }
     });
@@ -124,15 +126,63 @@ export async function getTraffyFloodGeoJSON() {
 
     if (res.ok) {
       const data = await res.json();
-      const rawList = data?.results || (Array.isArray(data) ? data : []);
-      if (Array.isArray(rawList)) {
-        liveFeatures = rawList
-          .map(normalizeTraffyItem)
-          .filter(Boolean);
+      if (Array.isArray(data?.features)) {
+        liveFeatures = data.features.filter((f) => {
+          if (!f || !f.geometry || !f.properties) return false;
+          const p = f.properties;
+          const text = `${p.type || ''} ${p.description || ''} ${p.ai?.summary || ''} ${p.problem_type_abdul || ''}`;
+          return text.includes('น้ำท่วม') || text.includes('น้ำรอระบาย') || text.includes('ท่วม') || text.includes('ขัง');
+        }).map((f) => {
+          const p = f.properties;
+          const state = p.state || 'รอรับเรื่อง';
+          const isResolved = state.includes('เสร็จสิ้น') || state.includes('ยุติ') || state.includes('เรียบร้อย');
+          const statusClass = isResolved ? 'status-resolved' : 'status-warning';
+          const statusLabel = isResolved ? 'แก้ไขแล้ว / น้ำลด' : state;
+          return {
+            type: 'Feature',
+            geometry: f.geometry,
+            properties: {
+              id: p.ticket_id || `traffy-${p.message_id || Math.random().toString(36).substring(2, 8)}`,
+              ticket_id: p.ticket_id || 'TF-REPORT',
+              title: 'รายงานน้ำท่วมขัง (Traffy Fondue)',
+              description: p.description || p.ai?.summary || 'มีรายงานน้ำท่วมขังบนผิวจราจร',
+              address: p.address || p.district || 'พื้นที่เกิดเหตุ',
+              district: p.district || '',
+              state: statusLabel,
+              stateClass: statusClass,
+              isResolved,
+              timestamp: p.timestamp || '',
+              formattedTime: formatThaiTimestamp(p.timestamp),
+              photo_url: p.photo_url || '',
+              traffy_url: p.ticket_id ? `https://share.traffy.in.th/share/teamchadchart/ticket?id=${p.ticket_id}` : 'https://www.traffy.in.th',
+              line_url: 'https://line.me/R/ti/p/@traffyfondue'
+            }
+          };
+        }).filter(Boolean);
       }
     }
   } catch (err) {
-    console.warn('Traffy Fondue live API unavailable:', err.message);
+    console.warn('Traffy Fondue live API primary fetch:', err.message);
+  }
+
+  // 2. Secondary fallback if primary yielded no features
+  if (liveFeatures.length === 0) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const res = await fetch(TRAFFY_API_URL, {
+        signal: controller.signal,
+        headers: { Accept: 'application/json' }
+      });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        const data = await res.json();
+        const rawList = data?.results || (Array.isArray(data) ? data : []);
+        if (Array.isArray(rawList)) {
+          liveFeatures = rawList.map(normalizeTraffyItem).filter(Boolean);
+        }
+      }
+    } catch {}
   }
 
   // Fallback to stale cache if live fetch yielded no features
