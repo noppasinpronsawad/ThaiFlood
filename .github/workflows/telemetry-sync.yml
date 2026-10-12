@@ -1,6 +1,12 @@
 name: Telemetry Cache Ingestion (Every 10 Mins)
 
 on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - 'public/api/**'
+      - 'public/archive/**'
   schedule:
     # Run every 10 minutes to protect government APIs and maintain fresh Edge CDN cache
     - cron: '*/10 * * * *'
