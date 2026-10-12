@@ -6,3 +6,9 @@ dist-ssr
 .env.*.local
 .DS_Store
 scratch/
+
+# Telemetry Cache & Archive logs (live generated only, never committed to git)
+public/api/*.json
+public/archive/*.json.gz
+!public/api/.gitkeep
+!public/archive/.gitkeep

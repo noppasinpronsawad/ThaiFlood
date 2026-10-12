@@ -4633,6 +4633,18 @@ html, body {
   border-radius: 20px;
 }
 
+.tf-stats-env-badge.badge-prod {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+}
+
+.tf-stats-env-badge.badge-uat {
+  background: rgba(56, 189, 248, 0.15);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+}
+
 /* Statistics Body & Sidebar */
 .tf-stats-body {
   flex: 1;

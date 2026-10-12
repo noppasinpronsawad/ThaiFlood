@@ -79,26 +79,26 @@ async function syncAll() {
     openMeteo: {
       name: "แบบจำลองพยากรณ์ ECMWF & GFS",
       agency: "Open-Meteo Supercomputer",
-      status: "UP",
+      status: "DOWN",
       lastAttempt: now.toISOString(),
-      lastSuccess: now.toISOString(),
-      count: 7
+      lastSuccess: prevServices.openMeteo?.lastSuccess || null,
+      count: 0
     },
     traffy: {
       name: "รายงานน้ำท่วมขัง Traffy Fondue",
       agency: "สวทช. / กรุงเทพมหานคร",
-      status: "UP",
+      status: "DOWN",
       lastAttempt: now.toISOString(),
-      lastSuccess: now.toISOString(),
-      count: 42
+      lastSuccess: prevServices.traffy?.lastSuccess || null,
+      count: 0
     },
     tmdRadar: {
       name: "เรดาร์ตรวจฝนตรวจสภาพอากาศ",
       agency: "กรมอุตุนิยมวิทยา (TMD)",
-      status: "UP",
+      status: "DOWN",
       lastAttempt: now.toISOString(),
-      lastSuccess: now.toISOString(),
-      count: 1
+      lastSuccess: prevServices.tmdRadar?.lastSuccess || null,
+      count: 0
     }
   };
 

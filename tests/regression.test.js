@@ -1320,7 +1320,7 @@ async function runAllTests() {
   });
 
   // 55. Edge Telemetry Ingestion Script & Scale Architecture
-  await test('TC-REG-55: Edge Telemetry Ingestion Script & Scale Architecture', () => {
+  await test('TC-REG-55: Edge Telemetry Ingestion Script & Scale Architecture', async () => {
     const scriptPath = path.join(rootDir, 'scripts/sync-telemetry.js');
     const workflowPath = path.join(rootDir, '.github/workflows/telemetry-sync.yml');
     assert.ok(fs.existsSync(scriptPath), 'Must have scripts/sync-telemetry.js');
@@ -1330,9 +1330,16 @@ async function runAllTests() {
     assert.ok(workflowContent.includes('cron:'), 'Workflow must have cron schedule');
     assert.ok(workflowContent.includes('sync-telemetry.js'), 'Workflow must execute sync-telemetry.js');
 
-    // Verify generated public/api cache files
     const metaPath = path.join(rootDir, 'public/api/meta.json');
     const stationsPath = path.join(rootDir, 'public/api/stations.json');
+
+    // If cache files don't exist yet, run sync script to verify dynamic generation pipeline
+    if (!fs.existsSync(metaPath) || !fs.existsSync(stationsPath)) {
+      const { execSync } = await import('child_process');
+      execSync('node scripts/sync-telemetry.js', { cwd: rootDir, stdio: 'pipe' });
+    }
+
+    // Verify generated public/api cache files
     assert.ok(fs.existsSync(metaPath), 'Must have generated public/api/meta.json');
     assert.ok(fs.existsSync(stationsPath), 'Must have generated public/api/stations.json');
 
@@ -1771,6 +1778,11 @@ async function runAllTests() {
   await test('TC-REG-67: Statistics Dashboard, 4-Field Health Schema, and Max 30-Day Batch Download', async () => {
     // 1. Meta JSON 4-field structure verification
     const metaPath = path.join(rootDir, 'public/api/meta.json');
+    const archiveIndexPath = path.join(rootDir, 'public/api/archive-index.json');
+    if (!fs.existsSync(metaPath) || !fs.existsSync(archiveIndexPath)) {
+      const { execSync } = await import('child_process');
+      execSync('node scripts/sync-telemetry.js', { cwd: rootDir, stdio: 'pipe' });
+    }
     assert.ok(fs.existsSync(metaPath), 'meta.json must exist');
     const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
     assert.ok(meta.services, 'meta.json must have services object');
@@ -1786,7 +1798,6 @@ async function runAllTests() {
     });
 
     // 2. Archive index verification
-    const archiveIndexPath = path.join(rootDir, 'public/api/archive-index.json');
     assert.ok(fs.existsSync(archiveIndexPath), 'archive-index.json must exist');
     const archiveIndex = JSON.parse(fs.readFileSync(archiveIndexPath, 'utf-8'));
     assert.ok(Array.isArray(archiveIndex), 'archive-index.json must be an array');

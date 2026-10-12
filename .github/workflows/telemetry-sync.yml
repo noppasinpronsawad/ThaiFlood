@@ -28,7 +28,7 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/api/*.json
+          git add --force public/api/*.json
           if git diff --staged --quiet; then
             echo "No telemetry changes detected."
           else

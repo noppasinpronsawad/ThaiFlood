@@ -6,6 +6,10 @@
  */
 import { zipSync, gunzipSync, strToU8 } from 'fflate';
 import { getLanguage, t, formatDateTimeCE } from '../services/i18nService.js';
+import { fetchLiveWaterStationsDirect } from '../services/waterStationService.js';
+import { fetchLiveDamsDirect } from '../services/damService.js';
+import { getDohHighwayGeoJSONDirect } from '../services/dohHighwayFloodService.js';
+import { getCctvGeoJSONDirect } from '../services/cctvService.js';
 
 export function createStatisticsView(options = {}) {
   const { onBackToMap } = options;
@@ -30,6 +34,10 @@ export function createStatisticsView(options = {}) {
 
   const yesterdayStr = formatDateInput(getYesterdayDate());
 
+  const isLocalEnv = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+  const envBadgeText = isLocalEnv ? 'UAT / Local (Port 3050)' : '🟢 Production Live (Direct API)';
+  const envBadgeClass = isLocalEnv ? 'badge-uat' : 'badge-prod';
+
   let activeTab = 'statistic';
   let metaData = null;
   let archiveIndex = [];
@@ -53,7 +61,7 @@ export function createStatisticsView(options = {}) {
         </div>
       </div>
       <div class="tf-stats-header-right">
-        <span class="tf-stats-env-badge">UAT Environment (Port 3050)</span>
+        <span class="tf-stats-env-badge ${envBadgeClass}" id="tf-stats-env-badge">${envBadgeText}</span>
       </div>
     </header>
 
@@ -257,108 +265,308 @@ export function createStatisticsView(options = {}) {
     }
   }
 
-  // Render Table & Summary for Tab 1 (Statistic)
-  async function loadStatisticsData() {
+  // Render Summary & Rows for Tab 1 (Statistic)
+  function renderStatisticsTable(data, isLiveDirect = false) {
     const summaryCard = container.querySelector('#tf-health-summary');
     const tableBody = container.querySelector('#tf-stats-table-body');
     if (!summaryCard || !tableBody) return;
 
+    const services = data.services || {};
+    const serviceKeys = Object.keys(services);
+
+    let upCount = 0;
+    let totalCount = serviceKeys.length;
+
+    serviceKeys.forEach((key) => {
+      if (services[key].status === 'UP') upCount++;
+    });
+
+    const isAllUp = upCount === totalCount && totalCount > 0;
+
+    // Summary Card
     summaryCard.innerHTML = `
-      <div class="health-summary-loading">
-        <span class="status-dot-blink"></span>
-        <span>กำลังเชื่อมต่อตรวจสอบสถานะระบบ...</span>
+      <div class="health-banner ${isAllUp ? 'banner-healthy' : 'banner-degraded'}">
+        <div class="banner-icon-box">${isAllUp ? '🟢' : '🟡'}</div>
+        <div class="banner-text-box">
+          <div class="banner-title">${isAllUp ? 'ทุกระบบพร้อมใช้งาน 100% (All Systems Operational)' : `มีบางระบบขัดข้องหรืออยู่ระหว่างตรวจสอบ (${upCount}/${totalCount})`}</div>
+          <div class="banner-meta">
+            <span>เวลาตรวจสอบ: <b>${formatIsoDateTime(data.timestamp)}</b></span>
+            <span>·</span>
+            <span>พร้อมใช้งาน: <b style="color:#22c55e;">${upCount}</b> / ${totalCount} บริการ</span>
+            <span>·</span>
+            <span style="color:${isLiveDirect ? '#38bdf8' : '#a78bfa'}; font-weight:600;">${isLiveDirect ? '⚡ ยิง API สดตรง (Real-time Live Direct Ping)' : '🚀 Edge Cache (< 60 นาที)'}</span>
+          </div>
+        </div>
       </div>
     `;
 
-    try {
-      const res = await fetch('/api/meta.json?t=' + Date.now(), { cache: 'no-cache' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      metaData = await res.json();
-
-      const services = metaData.services || {};
-      const serviceKeys = Object.keys(services);
-
-      let upCount = 0;
-      let totalCount = serviceKeys.length;
-
-      serviceKeys.forEach((key) => {
-        if (services[key].status === 'UP') upCount++;
-      });
-
-      const isAllUp = upCount === totalCount && totalCount > 0;
-
-      // Summary Card
-      summaryCard.innerHTML = `
-        <div class="health-banner ${isAllUp ? 'banner-healthy' : 'banner-degraded'}">
-          <div class="banner-icon-box">${isAllUp ? '🟢' : '🟡'}</div>
-          <div class="banner-text-box">
-            <div class="banner-title">${isAllUp ? 'ทุกระบบพร้อมใช้งาน 100% (All Systems Operational)' : `มีบางระบบขัดข้องหรืออยู่ระหว่างตรวจสอบ (${upCount}/${totalCount})`}</div>
-            <div class="banner-meta">
-              <span>เวลาอัปเดตรอบล่าสุด: <b>${formatIsoDateTime(metaData.timestamp)}</b></span>
-              <span>·</span>
-              <span>พร้อมใช้งาน: <b style="color:#22c55e;">${upCount}</b> / ${totalCount} บริการ</span>
-            </div>
-          </div>
-        </div>
-      `;
-
-      // Table Rows
-      if (serviceKeys.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:24px;">ไม่พบข้อมูลบริการใน Metadata</td></tr>`;
-        return;
-      }
-
-      tableBody.innerHTML = serviceKeys.map((key) => {
-        const s = services[key];
-        const isUp = s.status === 'UP';
-        const countText = s.count !== undefined ? `${Number(s.count).toLocaleString()} รายการ` : '-';
-        
-        // Highlight stale warning if lastSuccess is different from lastAttempt
-        const isStale = isUp && s.lastSuccess && s.lastAttempt && (s.lastSuccess !== s.lastAttempt);
-
-        return `
-          <tr class="${isUp ? 'row-up' : 'row-down'}">
-            <td class="col-service">
-              <div class="service-name">${s.name || key}</div>
-              <div class="service-agency">${s.agency || '-'}</div>
-            </td>
-            <td class="col-status" style="text-align: center;">
-              <span class="status-pill ${isUp ? 'status-up' : 'status-down'}">
-                <span class="status-indicator"></span>
-                <span>${isUp ? 'พร้อมใช้งาน' : 'ไม่ตอบกลับ'}</span>
-              </span>
-            </td>
-            <td class="col-datetime">${formatIsoDateTime(s.lastAttempt)}</td>
-            <td class="col-datetime">
-              ${formatIsoDateTime(s.lastSuccess)}
-              ${isStale ? '<span class="stale-badge" title="ข้อมูลรอบล่าสุดไม่ตรงรอบสำเร็จ">Stale</span>' : ''}
-            </td>
-            <td class="col-count" style="text-align: right;">
-              <span class="count-badge">${countText}</span>
-            </td>
-          </tr>
-        `;
-      }).join('');
-
-    } catch (err) {
-      summaryCard.innerHTML = `
-        <div class="health-banner banner-down">
-          <div class="banner-icon-box">🔴</div>
-          <div class="banner-text-box">
-            <div class="banner-title">ไม่สามารถเชื่อมต่อไฟล์สถิติ /api/meta.json ได้</div>
-            <div class="banner-meta">ข้อผิดพลาด: ${err.message}</div>
-          </div>
-        </div>
-      `;
-      tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:24px; color:#ef4444;">เกิดข้อผิดพลาดในการโหลดข้อมูล</td></tr>`;
+    // Table Rows
+    if (serviceKeys.length === 0) {
+      tableBody.innerHTML = `<tr><td colspan="5" style="text-align:center; padding:24px;">ไม่พบข้อมูลบริการใน Metadata</td></tr>`;
+      return;
     }
+
+    tableBody.innerHTML = serviceKeys.map((key) => {
+      const s = services[key];
+      const isUp = s.status === 'UP';
+      const countText = s.count !== undefined ? `${Number(s.count).toLocaleString()} รายการ` : '-';
+      
+      const isStale = isUp && s.lastSuccess && s.lastAttempt && (s.lastSuccess !== s.lastAttempt);
+
+      return `
+        <tr class="${isUp ? 'row-up' : 'row-down'}">
+          <td class="col-service">
+            <div class="service-name">${s.name || key}</div>
+            <div class="service-agency">${s.agency || '-'}</div>
+          </td>
+          <td class="col-status" style="text-align: center;">
+            <span class="status-pill ${isUp ? 'status-up' : 'status-down'}">
+              <span class="status-indicator"></span>
+              <span>${isUp ? 'พร้อมใช้งาน' : 'ไม่ตอบกลับ'}</span>
+            </span>
+          </td>
+          <td class="col-datetime">${formatIsoDateTime(s.lastAttempt)}</td>
+          <td class="col-datetime">
+            ${formatIsoDateTime(s.lastSuccess)}
+            ${isStale ? '<span class="stale-badge" title="ข้อมูลรอบล่าสุดไม่ตรงรอบสำเร็จ">Stale</span>' : ''}
+          </td>
+          <td class="col-count" style="text-align: right;">
+            <span class="count-badge">${countText}</span>
+          </td>
+        </tr>
+      `;
+    }).join('');
   }
 
-  // Refresh Button
+  // 100% Live Direct Diagnostics: Zero Mock Data, Zero Leftover UAT Data
+  async function runLiveDiagnostics() {
+    const summaryCard = container.querySelector('#tf-health-summary');
+    if (summaryCard) {
+      summaryCard.innerHTML = `
+        <div class="health-summary-loading">
+          <span class="status-dot-blink"></span>
+          <span>กำลังยิงตรวจสอบสถานะสดจาก API หน่วยงานรัฐ 7 ระบบ (Real-time Live Telemetry Ping)...</span>
+        </div>
+      `;
+    }
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+
+    const services = {
+      stations: {
+        name: "สถานีโทรมาตรวัดระดับน้ำ",
+        agency: "สสน. (HII / ThaiWater)",
+        status: "DOWN",
+        lastAttempt: nowIso,
+        lastSuccess: null,
+        count: 0
+      },
+      dams: {
+        name: "ปริมาณน้ำในอ่างเก็บน้ำ/เขื่อน",
+        agency: "กฟผ. / สสน. (EGAT / HII)",
+        status: "DOWN",
+        lastAttempt: nowIso,
+        lastSuccess: null,
+        count: 0
+      },
+      dohRoads: {
+        name: "รายงานน้ำท่วมทางหลวง",
+        agency: "กรมทางหลวง (DOH)",
+        status: "DOWN",
+        lastAttempt: nowIso,
+        lastSuccess: null,
+        count: 0
+      },
+      cctv: {
+        name: "กล้อง CCTV ทางหลวงและจุดตรวจน้ำ",
+        agency: "กรมทางหลวง / กทม. / กรมชลฯ",
+        status: "DOWN",
+        lastAttempt: nowIso,
+        lastSuccess: null,
+        count: 0
+      },
+      openMeteo: {
+        name: "แบบจำลองพยากรณ์ ECMWF & GFS",
+        agency: "Open-Meteo Supercomputer",
+        status: "DOWN",
+        lastAttempt: nowIso,
+        lastSuccess: null,
+        count: 0
+      },
+      traffy: {
+        name: "รายงานน้ำท่วมขัง Traffy Fondue",
+        agency: "สวทช. / กรุงเทพมหานคร",
+        status: "DOWN",
+        lastAttempt: nowIso,
+        lastSuccess: null,
+        count: 0
+      },
+      tmdRadar: {
+        name: "เรดาร์ตรวจฝนตรวจสภาพอากาศ",
+        agency: "กรมอุตุนิยมวิทยา (TMD)",
+        status: "DOWN",
+        lastAttempt: nowIso,
+        lastSuccess: null,
+        count: 0
+      }
+    };
+
+    await Promise.allSettled([
+      // 1. Water Stations (HII / ThaiWater)
+      (async () => {
+        try {
+          const list = await fetchLiveWaterStationsDirect();
+          if (Array.isArray(list) && list.length > 0) {
+            services.stations.status = 'UP';
+            services.stations.lastSuccess = nowIso;
+            services.stations.count = list.length;
+          }
+        } catch (err) {
+          console.warn('Live Stations diagnostic error:', err.message);
+        }
+      })(),
+
+      // 2. Dams (EGAT / HII)
+      (async () => {
+        try {
+          const list = await fetchLiveDamsDirect();
+          if (Array.isArray(list) && list.length > 0) {
+            services.dams.status = 'UP';
+            services.dams.lastSuccess = nowIso;
+            services.dams.count = list.length;
+          }
+        } catch (err) {
+          console.warn('Live Dams diagnostic error:', err.message);
+        }
+      })(),
+
+      // 3. DOH Highway Floods (DOH HDMS)
+      (async () => {
+        try {
+          const geojson = await getDohHighwayGeoJSONDirect();
+          if (geojson && geojson.features && geojson.features.length >= 0) {
+            services.dohRoads.status = 'UP';
+            services.dohRoads.lastSuccess = nowIso;
+            services.dohRoads.count = geojson.features.length;
+          }
+        } catch (err) {
+          console.warn('Live DOH diagnostic error:', err.message);
+        }
+      })(),
+
+      // 4. CCTV
+      (async () => {
+        try {
+          const geojson = await getCctvGeoJSONDirect();
+          if (geojson && geojson.features && geojson.features.length >= 0) {
+            services.cctv.status = 'UP';
+            services.cctv.lastSuccess = nowIso;
+            services.cctv.count = geojson.features.length;
+          }
+        } catch (err) {
+          console.warn('Live CCTV diagnostic error:', err.message);
+        }
+      })(),
+
+      // 5. Open-Meteo
+      (async () => {
+        try {
+          const res = await fetch('https://api.open-meteo.com/v1/forecast?latitude=13.75&longitude=100.5&daily=precipitation_sum&timezone=Asia%2FBangkok&forecast_days=7', {
+            signal: AbortSignal.timeout(8000)
+          });
+          if (res.ok) {
+            const json = await res.json();
+            const days = json?.daily?.time?.length || 7;
+            services.openMeteo.status = 'UP';
+            services.openMeteo.lastSuccess = nowIso;
+            services.openMeteo.count = days;
+          }
+        } catch (err) {
+          console.warn('Live Open-Meteo diagnostic error:', err.message);
+        }
+      })(),
+
+      // 6. Traffy Fondue
+      (async () => {
+        try {
+          const res = await fetch('https://publicapi.traffy.in.th/share/teamchadchart/search?type=%E0%B8%99%E0%B9%89%E0%B8%B3%E0%B8%97%E0%B9%88%E0%B8%A7%E0%B8%A1&limit=35', {
+            signal: AbortSignal.timeout(8000)
+          });
+          if (res.ok) {
+            const json = await res.json();
+            const count = json?.results ? json.results.length : (Array.isArray(json) ? json.length : 0);
+            services.traffy.status = 'UP';
+            services.traffy.lastSuccess = nowIso;
+            services.traffy.count = count;
+          }
+        } catch (err) {
+          console.warn('Live Traffy Fondue diagnostic error:', err.message);
+        }
+      })(),
+
+      // 7. TMD Radar
+      (async () => {
+        try {
+          const res = await fetch('https://api.rainviewer.com/public/weather-maps.json', {
+            signal: AbortSignal.timeout(8000)
+          });
+          if (res.ok) {
+            const json = await res.json();
+            const frames = json?.radar?.past?.length || 0;
+            services.tmdRadar.status = 'UP';
+            services.tmdRadar.lastSuccess = nowIso;
+            services.tmdRadar.count = frames;
+          }
+        } catch (err) {
+          console.warn('Live TMD Radar diagnostic error:', err.message);
+        }
+      })()
+    ]);
+
+    metaData = {
+      timestamp: nowIso,
+      mode: 'live-direct',
+      services
+    };
+
+    renderStatisticsTable(metaData, true);
+  }
+
+  // Load Statistics Data: Uses fresh Edge cache if available, or falls back to Live Direct Diagnostics
+  async function loadStatisticsData(forceDirectPing = false) {
+    if (forceDirectPing) {
+      await runLiveDiagnostics();
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/meta.json?t=' + Date.now(), { cache: 'no-cache' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.timestamp && data.services) {
+          const ageMs = Date.now() - new Date(data.timestamp).getTime();
+          // If fresh (< 60 minutes old), render cached telemetry
+          if (ageMs >= 0 && ageMs < 60 * 60 * 1000) {
+            metaData = data;
+            renderStatisticsTable(metaData, false);
+            return;
+          }
+        }
+      }
+    } catch {
+      // ignore fetch error and seamlessly fallback to live diagnostics
+    }
+
+    // Fallback: 100% Real-time Live Direct Telemetry Ping
+    await runLiveDiagnostics();
+  }
+
+  // Refresh Button - Always triggers fresh live API diagnostic call
   const refreshBtn = container.querySelector('#btn-refresh-stats');
   if (refreshBtn) {
     refreshBtn.addEventListener('click', () => {
-      loadStatisticsData();
+      loadStatisticsData(true);
     });
   }
 
