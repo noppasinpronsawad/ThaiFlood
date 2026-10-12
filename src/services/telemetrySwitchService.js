@@ -11,6 +11,7 @@ const BOT_MAX_AGE_MS = 60 * 60 * 1000; // 1 hour max age
 let cachedMeta = null;
 let lastMetaCheckTime = 0;
 const META_CHECK_INTERVAL_MS = 60 * 1000; // re-check meta at most once per minute
+export const GITHUB_RAW_BASE = 'https://raw.githubusercontent.com/noppasinpronsawad/ThaiFlood/main/public';
 
 /**
  * Fetch and parse /api/meta.json
@@ -22,21 +23,39 @@ export async function getBotMetadata() {
     return cachedMeta;
   }
 
+  // 1. Try local/origin /api/meta.json
   try {
-    const res = await fetch('/api/meta.json', {
+    const res = await fetch('/api/meta.json?t=' + now, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
       cache: 'no-cache'
     });
-    if (!res.ok) {
-      cachedMeta = null;
-      return null;
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.timestamp) {
+        cachedMeta = data;
+        lastMetaCheckTime = now;
+        return data;
+      }
     }
-    const data = await res.json();
-    if (data && data.timestamp) {
-      cachedMeta = data;
-      lastMetaCheckTime = now;
-      return data;
+  } catch {
+    // continue to Edge CDN fallback
+  }
+
+  // 2. Fallback to Global Edge CDN (Auto-updated by 24/7 background bot on GitHub)
+  try {
+    const res = await fetch(`${GITHUB_RAW_BASE}/api/meta.json?t=` + now, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      cache: 'no-cache'
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.timestamp) {
+        cachedMeta = data;
+        lastMetaCheckTime = now;
+        return data;
+      }
     }
   } catch {
     cachedMeta = null;
@@ -79,9 +98,17 @@ export async function isBotDataFresh() {
  * @param {Function} fallbackDirectFn - async function returning direct data
  * @returns {Promise<any>}
  */
+function isValidCachePayload(data) {
+  if (!data) return false;
+  if (Array.isArray(data)) return data.length > 0;
+  if (data.features && Array.isArray(data.features)) return data.features.length > 0;
+  return Object.keys(data).length > 0;
+}
+
 export async function fetchWithSmartSwitching(endpointName, fallbackDirectFn) {
   const fresh = await isBotDataFresh();
   if (fresh) {
+    // 1. Try local/origin endpoint first
     try {
       const res = await fetch(`/api/${endpointName}.json`, {
         headers: { 'Accept': 'application/json' },
@@ -89,12 +116,28 @@ export async function fetchWithSmartSwitching(endpointName, fallbackDirectFn) {
       });
       if (res.ok) {
         const data = await res.json();
-        if (data && (Array.isArray(data) ? data.length > 0 : (data.features?.length > 0 || Object.keys(data).length > 0))) {
+        if (isValidCachePayload(data)) {
+          return data;
+        }
+      }
+    } catch {
+      // continue to Edge CDN fallback
+    }
+
+    // 2. Fallback to Global Edge CDN
+    try {
+      const res = await fetch(`${GITHUB_RAW_BASE}/api/${endpointName}.json`, {
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-cache'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (isValidCachePayload(data)) {
           return data;
         }
       }
     } catch (err) {
-      console.warn(`[SWITCH] Error reading /api/${endpointName}.json: ${err.message}. Fallback to direct API.`);
+      console.warn(`[SWITCH] Error reading /api/${endpointName}.json from Edge CDN: ${err.message}. Fallback to direct API.`);
     }
   }
 

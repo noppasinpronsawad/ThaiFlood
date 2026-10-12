@@ -6,6 +6,7 @@
  */
 import { zipSync, gunzipSync, strToU8 } from 'fflate';
 import { getLanguage, t, formatDateTimeCE } from '../services/i18nService.js';
+import { GITHUB_RAW_BASE } from '../services/telemetrySwitchService.js';
 import { fetchLiveWaterStationsDirect } from '../services/waterStationService.js';
 import { fetchLiveDamsDirect } from '../services/damService.js';
 import { getDohHighwayGeoJSONDirect } from '../services/dohHighwayFloodService.js';
@@ -615,8 +616,11 @@ export function createStatisticsView(options = {}) {
       `;
     }
 
+    const cacheBuster = '?t=' + Date.now();
+
+    // 1. Try local/origin /api/meta.json
     try {
-      const res = await fetch('/api/meta.json?t=' + Date.now(), { cache: 'no-cache' });
+      const res = await fetch('/api/meta.json' + cacheBuster, { cache: 'no-cache' });
       if (res.ok) {
         const data = await res.json();
         if (data && data.timestamp && data.services) {
@@ -627,7 +631,23 @@ export function createStatisticsView(options = {}) {
         }
       }
     } catch {
-      // ignore fetch error and gracefully show standby table
+      // continue to Edge CDN fallback
+    }
+
+    // 2. Fallback to Global Edge CDN (Auto-updated by 24/7 background bot on GitHub)
+    try {
+      const res = await fetch(`${GITHUB_RAW_BASE}/api/meta.json` + cacheBuster, { cache: 'no-cache' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.timestamp && data.services) {
+          officialCronTimestamp = data.timestamp;
+          metaData = data;
+          renderStatisticsTable(metaData, false);
+          return;
+        }
+      }
+    } catch {
+      // ignore fetch error
     }
 
     // STRICT: หน้า Status ห้ามยิง API ตอนกดเข้าหน้าปกติ!
@@ -771,10 +791,22 @@ export function createStatisticsView(options = {}) {
 
   // Load Archive Index
   async function loadArchiveIndex() {
+    const cacheBuster = '?t=' + Date.now();
     try {
-      const res = await fetch('/api/archive-index.json?t=' + Date.now(), { cache: 'no-cache' });
+      const res = await fetch('/api/archive-index.json' + cacheBuster, { cache: 'no-cache' });
       if (res.ok) {
         archiveIndex = await res.json();
+        return;
+      }
+    } catch {
+      // try Edge CDN fallback
+    }
+
+    try {
+      const res = await fetch(`${GITHUB_RAW_BASE}/api/archive-index.json` + cacheBuster, { cache: 'no-cache' });
+      if (res.ok) {
+        archiveIndex = await res.json();
+        return;
       }
     } catch {
       archiveIndex = [];
@@ -940,7 +972,11 @@ export function createStatisticsView(options = {}) {
       statusMsg.textContent = `กำลังดึงไฟล์: ${filename} (${i + 1}/${dateRange.length})...`;
 
       try {
-        const res = await fetch(url);
+        let res = await fetch(url);
+        if (!res.ok) {
+          // Fallback to Global Edge CDN
+          res = await fetch(`${GITHUB_RAW_BASE}/archive/${filename}`);
+        }
         if (res.ok) {
           const buffer = await res.arrayBuffer();
           const u8 = new Uint8Array(buffer);
