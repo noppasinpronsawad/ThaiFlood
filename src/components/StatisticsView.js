@@ -11,6 +11,10 @@ import { fetchLiveDamsDirect } from '../services/damService.js';
 import { getDohHighwayGeoJSONDirect } from '../services/dohHighwayFloodService.js';
 import { getCctvGeoJSONDirect } from '../services/cctvService.js';
 
+// Module-level Diagnostic Cache (prevents spamming external gov APIs on every navigation)
+let cachedDiagnosticResult = null;
+const DIAGNOSTIC_CACHE_TTL_MS = 3 * 60 * 1000; // 3 minutes TTL
+
 export function createStatisticsView(options = {}) {
   const { onBackToMap } = options;
 
@@ -529,6 +533,7 @@ export function createStatisticsView(options = {}) {
       mode: 'live-direct',
       services
     };
+    cachedDiagnosticResult = metaData;
 
     renderStatisticsTable(metaData, true);
   }
@@ -540,6 +545,14 @@ export function createStatisticsView(options = {}) {
       return;
     }
 
+    // 1. Check in-memory live diagnostic cache (< 3 minutes old)
+    if (cachedDiagnosticResult && (Date.now() - new Date(cachedDiagnosticResult.timestamp).getTime() < DIAGNOSTIC_CACHE_TTL_MS)) {
+      metaData = cachedDiagnosticResult;
+      renderStatisticsTable(metaData, true);
+      return;
+    }
+
+    // 2. Try fresh Edge cache from bot (< 60 minutes old)
     try {
       const res = await fetch('/api/meta.json?t=' + Date.now(), { cache: 'no-cache' });
       if (res.ok) {
@@ -558,7 +571,7 @@ export function createStatisticsView(options = {}) {
       // ignore fetch error and seamlessly fallback to live diagnostics
     }
 
-    // Fallback: 100% Real-time Live Direct Telemetry Ping
+    // 3. Fallback: 100% Real-time Live Direct Telemetry Ping
     await runLiveDiagnostics();
   }
 
