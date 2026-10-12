@@ -618,9 +618,9 @@ export function createStatisticsView(options = {}) {
 
     const cacheBuster = '?t=' + Date.now();
 
-    // 1. Try local/origin /api/meta.json
+    // 1. Prioritize Global Live Edge CDN (Fresh bot data pushed every 10 mins)
     try {
-      const res = await fetch('/api/meta.json' + cacheBuster, { cache: 'no-cache' });
+      const res = await fetch(`${GITHUB_RAW_BASE}/api/meta.json` + cacheBuster, { cache: 'no-cache' });
       if (res.ok) {
         const data = await res.json();
         if (data && data.timestamp && data.services) {
@@ -631,12 +631,12 @@ export function createStatisticsView(options = {}) {
         }
       }
     } catch {
-      // continue to Edge CDN fallback
+      // fallback to local origin
     }
 
-    // 2. Fallback to Global Edge CDN (Auto-updated by 24/7 background bot on GitHub)
+    // 2. Fallback to local / origin host cache
     try {
-      const res = await fetch(`${GITHUB_RAW_BASE}/api/meta.json` + cacheBuster, { cache: 'no-cache' });
+      const res = await fetch('/api/meta.json' + cacheBuster, { cache: 'no-cache' });
       if (res.ok) {
         const data = await res.json();
         if (data && data.timestamp && data.services) {
@@ -793,17 +793,17 @@ export function createStatisticsView(options = {}) {
   async function loadArchiveIndex() {
     const cacheBuster = '?t=' + Date.now();
     try {
-      const res = await fetch('/api/archive-index.json' + cacheBuster, { cache: 'no-cache' });
+      const res = await fetch(`${GITHUB_RAW_BASE}/api/archive-index.json` + cacheBuster, { cache: 'no-cache' });
       if (res.ok) {
         archiveIndex = await res.json();
         return;
       }
     } catch {
-      // try Edge CDN fallback
+      // try local origin
     }
 
     try {
-      const res = await fetch(`${GITHUB_RAW_BASE}/api/archive-index.json` + cacheBuster, { cache: 'no-cache' });
+      const res = await fetch('/api/archive-index.json' + cacheBuster, { cache: 'no-cache' });
       if (res.ok) {
         archiveIndex = await res.json();
         return;
@@ -972,10 +972,10 @@ export function createStatisticsView(options = {}) {
       statusMsg.textContent = `กำลังดึงไฟล์: ${filename} (${i + 1}/${dateRange.length})...`;
 
       try {
-        let res = await fetch(url);
+        let res = await fetch(`${GITHUB_RAW_BASE}/archive/${filename}`);
         if (!res.ok) {
-          // Fallback to Global Edge CDN
-          res = await fetch(`${GITHUB_RAW_BASE}/archive/${filename}`);
+          // Fallback to local origin
+          res = await fetch(url);
         }
         if (res.ok) {
           const buffer = await res.arrayBuffer();

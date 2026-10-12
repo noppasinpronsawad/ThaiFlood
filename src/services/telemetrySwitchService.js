@@ -23,9 +23,9 @@ export async function getBotMetadata() {
     return cachedMeta;
   }
 
-  // 1. Try local/origin /api/meta.json
+  // 1. Prioritize Global Live Edge CDN (Always updated by 24/7 background bot on GitHub)
   try {
-    const res = await fetch('/api/meta.json?t=' + now, {
+    const res = await fetch(`${GITHUB_RAW_BASE}/api/meta.json?t=` + now, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
       cache: 'no-cache'
@@ -39,12 +39,12 @@ export async function getBotMetadata() {
       }
     }
   } catch {
-    // continue to Edge CDN fallback
+    // continue to local fallback
   }
 
-  // 2. Fallback to Global Edge CDN (Auto-updated by 24/7 background bot on GitHub)
+  // 2. Fallback to local / origin host cache
   try {
-    const res = await fetch(`${GITHUB_RAW_BASE}/api/meta.json?t=` + now, {
+    const res = await fetch('/api/meta.json?t=' + now, {
       method: 'GET',
       headers: { 'Accept': 'application/json' },
       cache: 'no-cache'
@@ -108,23 +108,7 @@ function isValidCachePayload(data) {
 export async function fetchWithSmartSwitching(endpointName, fallbackDirectFn) {
   const fresh = await isBotDataFresh();
   if (fresh) {
-    // 1. Try local/origin endpoint first
-    try {
-      const res = await fetch(`/api/${endpointName}.json`, {
-        headers: { 'Accept': 'application/json' },
-        cache: 'no-cache'
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (isValidCachePayload(data)) {
-          return data;
-        }
-      }
-    } catch {
-      // continue to Edge CDN fallback
-    }
-
-    // 2. Fallback to Global Edge CDN
+    // 1. Prioritize Global Live Edge CDN
     try {
       const res = await fetch(`${GITHUB_RAW_BASE}/api/${endpointName}.json`, {
         headers: { 'Accept': 'application/json' },
@@ -136,8 +120,24 @@ export async function fetchWithSmartSwitching(endpointName, fallbackDirectFn) {
           return data;
         }
       }
+    } catch {
+      // try local origin
+    }
+
+    // 2. Fallback to local / origin host
+    try {
+      const res = await fetch(`/api/${endpointName}.json`, {
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-cache'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (isValidCachePayload(data)) {
+          return data;
+        }
+      }
     } catch (err) {
-      console.warn(`[SWITCH] Error reading /api/${endpointName}.json from Edge CDN: ${err.message}. Fallback to direct API.`);
+      console.warn(`[SWITCH] Error reading /api/${endpointName}.json: ${err.message}. Fallback to direct API.`);
     }
   }
 
