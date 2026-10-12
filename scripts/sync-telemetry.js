@@ -85,7 +85,7 @@ async function syncAll() {
       count: 0
     },
     traffy: {
-      name: "รายงานน้ำท่วมขัง Traffy Fondue",
+      name: "รายงานแจ้งเหตุ Traffy Fondue (ทุกประเภทปัญหา)",
       agency: "สวทช. / กรุงเทพมหานคร",
       status: "DOWN",
       lastAttempt: now.toISOString(),
@@ -202,16 +202,17 @@ async function syncAll() {
     services.openMeteo.status = "DOWN";
   }
 
-  // 4c. Traffy Fondue Open API (Live Crowd-sourced Flood Reports)
+  // 4c. Traffy Fondue Open API (Live Crowd-sourced Citizen Reports)
   try {
-    const { getTraffyFloodGeoJSON } = await import('../src/services/traffyFondueService.js');
-    const tfData = await getTraffyFloodGeoJSON();
+    const { getTraffyFloodGeoJSONDirect } = await import('../src/services/traffyFondueService.js');
+    const tfData = await getTraffyFloodGeoJSONDirect();
     const count = tfData?.features ? tfData.features.length : 0;
     if (count > 0) {
+      fs.writeFileSync(path.join(OUTPUT_DIR, 'traffy.json'), JSON.stringify(tfData));
       services.traffy.status = "UP";
       services.traffy.lastSuccess = now.toISOString();
       services.traffy.count = count;
-      console.log(`[SYNC] ✅ Verified Traffy Fondue (${count} live flood reports)`);
+      console.log(`[SYNC] ✅ Verified Traffy Fondue (${count} live citizen reports)`);
     } else {
       services.traffy.status = "DOWN";
     }

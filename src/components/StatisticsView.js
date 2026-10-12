@@ -417,7 +417,7 @@ export function createStatisticsView(options = {}) {
         count: 0
       },
       traffy: {
-        name: "รายงานน้ำท่วมขัง Traffy Fondue",
+        name: "รายงานแจ้งเหตุ Traffy Fondue (ทุกประเภทปัญหา)",
         agency: "สวทช. / กรุงเทพมหานคร",
         status: "DOWN",
         lastAttempt: nowIso,

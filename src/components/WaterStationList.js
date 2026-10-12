@@ -904,10 +904,13 @@ export function createWaterStationList(stations, onStationSelect) {
     const badgeBorder = isDone ? '#a7f3d0' : '#fde68a';
     const badgeIcon = isDone ? '✅' : '⏳';
 
+    const defaultTitle = isEn ? 'Traffy Fondue Incident' : 'จุดแจ้งเหตุ Traffy Fondue';
+    const typePrefix = item.type ? `[${item.type}] ` : '';
+
     sheet.innerHTML = `
       <div class="gmaps-sheet-header">
         <div style="flex: 1;">
-          <h2 class="gmaps-place-title">🛣️ ${item.address || (isEn ? 'Traffy Fondue Flood Incident' : 'จุดน้ำท่วมขัง Traffy Fondue')}</h2>
+          <h2 class="gmaps-place-title">📋 ${typePrefix}${item.address || defaultTitle}</h2>
           <div class="gmaps-place-sub">${isEn ? `Ticket #${item.ticket_id} · District: ${item.district || 'Bangkok'}` : `รหัสแจ้งเหตุ #${item.ticket_id} · เขต ${item.district || 'กรุงเทพมหานคร'}`}</div>
         </div>
         <button class="gmaps-sheet-close" id="btn-gmaps-close" title="${t('sheet_close')}">✕</button>

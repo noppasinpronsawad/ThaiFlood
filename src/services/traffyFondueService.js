@@ -1,13 +1,14 @@
 import { realTraffySnapshot } from '../data/traffyLiveSnapshot.js';
+import { fetchWithSmartSwitching } from './telemetrySwitchService.js';
 
 /**
- * Traffy Fondue Flood Reports Service
- * 100% Real Live Crowd-Sourced Flood Reports from NECTEC Traffy Fondue Open API
- * ZERO MOCK DATA: Never injects fake or synthetic flood incidents.
+ * Traffy Fondue Citizen Reports Service
+ * 100% Real Live Crowd-Sourced Citizen Issue Reports from NECTEC Traffy Fondue Open API
+ * ZERO MOCK DATA: Never injects fake or synthetic reports.
  */
 
 const TRAFFY_LIVE_API_URL = 'https://api.traffy.in.th/postgrest/rpc/get_bkk_geojson_feed?p_limit=300';
-const TRAFFY_API_URL = 'https://publicapi.traffy.in.th/share/teamchadchart/search?type=%E0%B8%99%E0%B9%89%E0%B8%B3%E0%B8%97%E0%B9%88%E0%B8%A7%E0%B8%A1&limit=35';
+const TRAFFY_API_URL = 'https://publicapi.traffy.in.th/share/teamchadchart/search?limit=100';
 const TRAFFY_CACHE_KEY = 'thaiflood_traffy_live_cache_v2';
 const TRAFFY_CACHE_TTL_MS = 5 * 60 * 1000; // 5 mins
 
@@ -62,7 +63,8 @@ function normalizeTraffyItem(item) {
   const state = item.state || 'รอรับเรื่อง';
   const isResolved = state.includes('เสร็จสิ้น') || state.includes('ยุติ') || state.includes('เรียบร้อย');
   const statusClass = isResolved ? 'status-resolved' : 'status-warning';
-  const statusLabel = isResolved ? 'แก้ไขแล้ว / น้ำลด' : state;
+  const statusLabel = isResolved ? 'แก้ไขแล้ว' : state;
+  const typeName = item.type || (Array.isArray(item.problem_type_fondue) ? item.problem_type_fondue.filter(Boolean).join(', ') : item.problem_type_fondue) || (Array.isArray(item.problem_type_abdul) ? item.problem_type_abdul.filter(Boolean).join(', ') : item.problem_type_abdul) || 'เรื่องร้องเรียน';
 
   return {
     type: 'Feature',
@@ -71,12 +73,13 @@ function normalizeTraffyItem(item) {
       coordinates: [lng, lat]
     },
     properties: {
-      id: item.ticket_id || `traffy-${Math.random().toString(36).substring(2, 8)}`,
+      id: item.ticket_id || `traffy-${item.message_id || Date.now()}`,
       ticket_id: item.ticket_id || 'TF-REPORT',
-      title: 'รายงานน้ำท่วมขัง (Traffy Fondue)',
-      description: item.description || 'มีรายงานน้ำท่วมขังบนผิวจราจร',
+      title: `Traffy Fondue: ${typeName}`,
+      description: item.description || item.ai?.summary || typeName,
       address: item.address || item.district || 'พื้นที่เกิดเหตุ',
       district: item.district || '',
+      type: typeName,
       state: statusLabel,
       stateClass: statusClass,
       isResolved,
@@ -90,11 +93,15 @@ function normalizeTraffyItem(item) {
 }
 
 /**
- * Fetch flood incidents from Traffy Fondue Open API
+ * Fetch incident reports from Traffy Fondue Open API
  * 100% Real Live Data Only - returns real cached data if network times out
  * @returns {Promise<GeoJSON.FeatureCollection>}
  */
 export async function getTraffyFloodGeoJSON() {
+  return await fetchWithSmartSwitching('traffy', getTraffyFloodGeoJSONDirect);
+}
+
+export async function getTraffyFloodGeoJSONDirect() {
   let staleCachedData = null;
   if (typeof window !== 'undefined' && window.localStorage) {
     try {
@@ -117,7 +124,7 @@ export async function getTraffyFloodGeoJSON() {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 20000);
 
-    // 1. Primary: Official Live Traffy Fondue BMA Feed
+    // 1. Primary: Official Live Traffy Fondue BMA Feed (All citizen issues)
     const res = await fetch(TRAFFY_LIVE_API_URL, {
       signal: controller.signal,
       headers: { Accept: 'application/json' }
@@ -127,27 +134,24 @@ export async function getTraffyFloodGeoJSON() {
     if (res.ok) {
       const data = await res.json();
       if (Array.isArray(data?.features)) {
-        liveFeatures = data.features.filter((f) => {
-          if (!f || !f.geometry || !f.properties) return false;
-          const p = f.properties;
-          const text = `${p.type || ''} ${p.description || ''} ${p.ai?.summary || ''} ${p.problem_type_abdul || ''}`;
-          return text.includes('น้ำท่วม') || text.includes('น้ำรอระบาย') || text.includes('ท่วม') || text.includes('ขัง');
-        }).map((f) => {
+        liveFeatures = data.features.filter((f) => f && f.geometry && f.properties).map((f) => {
           const p = f.properties;
           const state = p.state || 'รอรับเรื่อง';
           const isResolved = state.includes('เสร็จสิ้น') || state.includes('ยุติ') || state.includes('เรียบร้อย');
           const statusClass = isResolved ? 'status-resolved' : 'status-warning';
-          const statusLabel = isResolved ? 'แก้ไขแล้ว / น้ำลด' : state;
+          const statusLabel = isResolved ? 'แก้ไขแล้ว' : state;
+          const typeName = p.type || (Array.isArray(p.problem_type_fondue) ? p.problem_type_fondue.filter(Boolean).join(', ') : p.problem_type_fondue) || (Array.isArray(p.problem_type_abdul) ? p.problem_type_abdul.filter(Boolean).join(', ') : p.problem_type_abdul) || 'เรื่องร้องเรียน';
           return {
             type: 'Feature',
             geometry: f.geometry,
             properties: {
-              id: p.ticket_id || `traffy-${p.message_id || Math.random().toString(36).substring(2, 8)}`,
+              id: p.ticket_id || `traffy-${p.message_id || Date.now()}`,
               ticket_id: p.ticket_id || 'TF-REPORT',
-              title: 'รายงานน้ำท่วมขัง (Traffy Fondue)',
-              description: p.description || p.ai?.summary || 'มีรายงานน้ำท่วมขังบนผิวจราจร',
+              title: `Traffy Fondue: ${typeName}`,
+              description: p.description || p.ai?.summary || typeName,
               address: p.address || p.district || 'พื้นที่เกิดเหตุ',
               district: p.district || '',
+              type: typeName,
               state: statusLabel,
               stateClass: statusClass,
               isResolved,
