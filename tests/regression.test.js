@@ -860,7 +860,7 @@ async function runAllTests() {
     // 1. Layer Toggle in Navbar & Mobile Panel
     assert.ok(navbarCode.includes('id="toggle-traffy-flood"'), 'Navbar must have toggle-traffy-flood');
     assert.ok(navbarCode.includes('data-layer="traffy-flood"'), 'Must have data-layer="traffy-flood"');
-    assert.ok(navbarCode.includes('minimal-road-layer-icon'), 'Navbar must render minimal road layer icon');
+    assert.ok(navbarCode.includes('traffy-layer-icon') || navbarCode.includes('minimal-road-layer-icon'), 'Navbar must render traffy layer icon');
 
     // 2. Traffy Fondue Flood Service
     assert.ok(typeof traffyService.getTraffyFloodGeoJSON === 'function', 'Service must export getTraffyFloodGeoJSON');
@@ -1837,6 +1837,73 @@ async function runAllTests() {
     assert.ok(cssCode.includes('.tf-btn-download-zip'), 'index.css must style .tf-btn-download-zip');
     assert.ok(cssCode.includes('.tf-modal-backdrop'), 'index.css must style .tf-modal-backdrop');
     assert.ok(cssCode.includes('.tf-admin-pass-input'), 'index.css must style .tf-admin-pass-input');
+  });
+
+  // 68. Zoom-Only Map Isolation, Traffy Fondue Rebranding & 3-Tier Zoom-Based Clustering
+  await test('TC-REG-68: Zoom-Only Map Isolation, Traffy Fondue Rebranding & 3-Tier Zoom-Based Clustering', async () => {
+    const mainCode = fs.readFileSync(path.join(rootDir, 'src/main.js'), 'utf-8');
+    const cssCode = fs.readFileSync(path.join(rootDir, 'src/index.css'), 'utf-8');
+    const i18nModule = await import(path.join(rootDir, 'src/services/i18nService.js'));
+    const navbarCode = fs.readFileSync(path.join(rootDir, 'src/components/Navbar.js'), 'utf-8');
+    const clusterService = await import(path.join(rootDir, 'src/services/markerClusterService.js'));
+    const mapViewerCode = fs.readFileSync(path.join(rootDir, 'src/components/MapViewer.js'), 'utf-8');
+
+    // 1. Zoom Isolation on UI Overlays
+    assert.ok(mainCode.includes('gesturestart'), 'main.js must prevent gesturestart');
+    assert.ok(mainCode.includes('gesturechange'), 'main.js must prevent gesturechange');
+    assert.ok(mainCode.includes('gestureend'), 'main.js must prevent gestureend');
+    assert.ok(mainCode.includes('e.ctrlKey'), 'main.js must intercept ctrlKey wheel events');
+    assert.ok(mainCode.includes('touches.length > 1'), 'main.js must intercept multi-touch touches on UI overlays');
+    assert.ok(mainCode.includes('lastTouchEnd'), 'main.js must prevent double-tap zoom on non-map UI');
+    assert.ok(cssCode.includes('touch-action: pan-y;'), 'index.css must specify touch-action: pan-y on place sheet');
+    assert.ok(cssCode.includes('overscroll-behavior: contain;'), 'index.css must contain overscroll on place sheet');
+    assert.ok(cssCode.includes('touch-action: none;'), 'index.css must specify touch-action: none on disclaimer pill');
+
+    // 2. Traffy Fondue Rebranding
+    assert.ok(navbarCode.includes('รับแจ้งเรื่อง Traffy Fondue (กทม.)'), 'Navbar must show new Traffy title');
+    assert.ok(navbarCode.includes('รับแจ้งเรื่องร้องเรียนจากประชาชน สวทช. / กทม. (ทุกประเภทปัญหา)'), 'Navbar must show new Traffy description');
+    assert.ok(navbarCode.includes('ดำเนินการเสร็จสิ้น / แก้ไขแล้ว'), 'Navbar legend must show แก้ไขแล้ว');
+    assert.strictEqual(i18nModule.TRANSLATIONS.th.layer_traffy, 'รับแจ้งเรื่อง Traffy Fondue (กทม.)', 'Thai layer_traffy must match');
+    assert.strictEqual(i18nModule.TRANSLATIONS.en.layer_traffy, 'Traffy Fondue Citizen Reports (BMA)', 'English layer_traffy must match');
+    assert.strictEqual(i18nModule.TRANSLATIONS.th.legend_traffy_resolved, '🟢 ดำเนินการเสร็จสิ้น / แก้ไขแล้ว', 'Thai legend_traffy_resolved must match');
+    assert.strictEqual(i18nModule.TRANSLATIONS.en.legend_traffy_resolved, '🟢 Resolved / Completed', 'English legend_traffy_resolved must match');
+
+    // 3. 3-Tier Zoom-Based Clustering for Traffy Fondue
+    const mockTraffy = [
+      { properties: { district: 'บางแค', state: 'กำลังดำเนินการ' }, geometry: { type: 'Point', coordinates: [100.40, 13.71] } },
+      { properties: { district: 'บางแค', state: 'เสร็จสิ้น' }, geometry: { type: 'Point', coordinates: [100.41, 13.72] } },
+      { properties: { district: 'จตุจักร', state: 'กำลังดำเนินการ' }, geometry: { type: 'Point', coordinates: [100.55, 13.82] } }
+    ];
+
+    // Tier 1: Zoom < 10.0 -> Exactly 1 single aggregate pin
+    const tier1 = clusterService.clusterPointsByZoom(mockTraffy, 8.5, 'traffy');
+    assert.strictEqual(tier1.length, 1, 'Zoom < 10.0 must return exactly 1 single cluster for Traffy');
+    assert.strictEqual(tier1[0].level, 'overall', 'Tier 1 must have level overall');
+    assert.strictEqual(tier1[0].name, 'กรุงเทพมหานคร', 'Tier 1 must have name กรุงเทพมหานคร');
+    assert.strictEqual(tier1[0].count, 3, 'Tier 1 must aggregate all 3 items');
+
+    // Tier 2: 10.0 <= Zoom < 12.5 -> Grouped by district
+    const tier2 = clusterService.clusterPointsByZoom(mockTraffy, 11.0, 'traffy');
+    assert.strictEqual(tier2.length, 2, 'Zoom 11.0 must group into 2 district clusters');
+    assert.ok(tier2.every(c => c.isCluster && c.level === 'district'), 'All Tier 2 items must be district clusters');
+    const bangKhae = tier2.find(c => c.name === 'เขตบางแค');
+    assert.ok(bangKhae, 'Must have เขตบางแค cluster');
+    assert.strictEqual(bangKhae.count, 2, 'เขตบางแค must have 2 items');
+    const chatuchak = tier2.find(c => c.name === 'เขตจตุจักร');
+    assert.ok(chatuchak, 'Must have เขตจตุจักร cluster');
+    assert.strictEqual(chatuchak.count, 1, 'เขตจตุจักร must have 1 item');
+
+    // Tier 3: Zoom >= 12.5 -> Individual pins
+    const tier3 = clusterService.clusterPointsByZoom(mockTraffy, 13.0, 'traffy');
+    assert.strictEqual(tier3.length, 3, 'Zoom 13.0 must return 3 individual pins');
+    assert.ok(tier3.every(p => !p.isCluster && p.level === 'individual'), 'All Tier 3 items must be individual pins');
+
+    // MapViewer integration & Zoom Indicator verification
+    assert.ok(mapViewerCode.includes("entry.level === 'overall'"), 'MapViewer must handle overall level');
+    assert.ok(mapViewerCode.includes("entry.level === 'district'"), 'MapViewer must handle district level');
+    assert.ok(mapViewerCode.includes('gmaps-zoom-level-badge'), 'MapViewer must include gmaps-zoom-level-badge');
+    assert.ok(mapViewerCode.includes('window.getZoom'), 'MapViewer must expose window.getZoom');
+    assert.ok(cssCode.includes('.gmaps-zoom-level-badge'), 'index.css must style .gmaps-zoom-level-badge');
   });
 
   console.log(`\n🎉 Regression Tests Completed: ${passedTests} passed.\n`);

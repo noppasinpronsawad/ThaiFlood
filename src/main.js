@@ -15,13 +15,77 @@ import { createNavbar } from './components/Navbar.js';
 import { createMapViewer } from './components/MapViewer.js';
 import { createWaterStationList } from './components/WaterStationList.js';
 
-// Prevent iOS Safari / Chrome elastic window scroll dislocation
+// Prevent iOS Safari / Chrome elastic window scroll dislocation and lock zooming exclusively to Map Canvas
 if (typeof window !== 'undefined') {
   window.addEventListener('scroll', () => {
     if (window.scrollY !== 0 || window.scrollX !== 0) {
       window.scrollTo(0, 0);
     }
   }, { passive: true });
+
+  // 1. Prevent Safari gesture zoom (pinch-to-zoom on HTML / UI overlays)
+  document.addEventListener('gesturestart', (e) => {
+    e.preventDefault();
+  }, { passive: false });
+  document.addEventListener('gesturechange', (e) => {
+    e.preventDefault();
+  }, { passive: false });
+  document.addEventListener('gestureend', (e) => {
+    e.preventDefault();
+  }, { passive: false });
+
+  // 2. Prevent Ctrl+Wheel / Trackpad pinch on UI overlays (disclaimer pill, place sheet, navbar, etc.)
+  document.addEventListener('wheel', (e) => {
+    if (e.ctrlKey) {
+      const isMapCanvas = e.target && (
+        e.target.closest('.maplibregl-canvas') ||
+        (e.target.closest('#map') &&
+          !e.target.closest('.gmaps-place-sheet') &&
+          !e.target.closest('.gmaps-disclaimer-pill') &&
+          !e.target.closest('.navbar-container') &&
+          !e.target.closest('.bottom-unified-container') &&
+          !e.target.closest('.gmaps-basemap-container') &&
+          !e.target.closest('.gmaps-layer-panel') &&
+          !e.target.closest('.side-drawer'))
+      );
+      if (!isMapCanvas) {
+        e.preventDefault();
+      }
+    }
+  }, { passive: false });
+
+  // 3. Prevent multi-touch pinch zoom on UI overlays while letting map handle it
+  document.addEventListener('touchmove', (e) => {
+    if (e.touches && e.touches.length > 1) {
+      const isMapCanvas = e.target && (
+        e.target.closest('.maplibregl-canvas') ||
+        (e.target.closest('#map') &&
+          !e.target.closest('.gmaps-place-sheet') &&
+          !e.target.closest('.gmaps-disclaimer-pill') &&
+          !e.target.closest('.navbar-container') &&
+          !e.target.closest('.bottom-unified-container') &&
+          !e.target.closest('.gmaps-basemap-container') &&
+          !e.target.closest('.gmaps-layer-panel') &&
+          !e.target.closest('.side-drawer'))
+      );
+      if (!isMapCanvas) {
+        e.preventDefault();
+      }
+    }
+  }, { passive: false });
+
+  // 4. Prevent double-tap zoom on non-map UI elements
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', (e) => {
+    const isMapCanvas = e.target && (e.target.closest('.maplibregl-canvas') || e.target.id === 'map');
+    if (!isMapCanvas) {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 300) {
+        e.preventDefault();
+      }
+      lastTouchEnd = now;
+    }
+  }, { passive: false });
 }
 
 async function initApp() {

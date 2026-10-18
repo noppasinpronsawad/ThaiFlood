@@ -236,6 +236,118 @@ export function clusterPointsByZoom(items, zoom, type = 'doh') {
 
   if (normalized.length === 0) return [];
 
+  // Specific 3-tier Zoom-based Clustering for Traffy Fondue:
+  // - zoom < 10.0 (มากกว่า 1 จังหวัด & ภาพรวมระดับจังหวัด): 1 หมุดแสดงตัวเลขรวมทั้งหมด (Overall Bangkok aggregate)
+  // - 10.0 <= zoom < 12.5 (เจาะจงระดับจังหวัด/เขต กทม.): รวมหมุดย่อยแบ่งตามเขต กทม. (District clusters)
+  // - zoom >= 12.5 (ระดับเขต/ถนน): แสดงหมุดแต่ละจุดชัดเจน (Individual pins with spiderfy)
+  if (type === 'traffy') {
+    // 1. Tier 1: Zoom < 10.0 (ภาพรวมทั้งจังหวัด / มากกว่า 1 จังหวัด -> 1 หมุดรวม)
+    if (zoom < 10.0) {
+      let sumLng = 0;
+      let sumLat = 0;
+      let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+
+      normalized.forEach((it) => {
+        const [lng, lat] = it.coords;
+        sumLng += lng;
+        sumLat += lat;
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+      });
+
+      const center = [sumLng / normalized.length, sumLat / normalized.length];
+      const bounds = [[minLng, minLat], [maxLng, maxLat]];
+
+      return [{
+        isCluster: true,
+        level: 'overall',
+        name: 'กรุงเทพมหานคร',
+        title: `กรุงเทพมหานคร (${normalized.length} เรื่อง)`,
+        count: normalized.length,
+        center,
+        bounds,
+        items: normalized
+      }];
+    }
+
+    // 2. Tier 2: 10.0 <= Zoom < 12.5 (เจาะจงระดับจังหวัด/เขต กทม. -> แบ่งตามเขต)
+    if (zoom < 12.5) {
+      const districtGroups = {};
+      normalized.forEach((item) => {
+        let dist = (item.properties?.district || '').trim();
+        if (!dist && item.properties?.address) {
+          const m = item.properties.address.match(/เขต([^\s]+)/);
+          if (m) dist = m[1].trim();
+        }
+        if (!dist) dist = 'ไม่ระบุเขต';
+        const cleanDist = dist.replace(/^เขต/, '').trim();
+        const distKey = cleanDist ? `เขต${cleanDist}` : 'ไม่ระบุเขต';
+
+        if (!districtGroups[distKey]) districtGroups[distKey] = [];
+        districtGroups[distKey].push(item);
+      });
+
+      return Object.entries(districtGroups).map(([districtName, groupItems]) => {
+        let sumLng = 0;
+        let sumLat = 0;
+        let minLng = Infinity, maxLng = -Infinity, minLat = Infinity, maxLat = -Infinity;
+
+        groupItems.forEach((it) => {
+          const [lng, lat] = it.coords;
+          sumLng += lng;
+          sumLat += lat;
+          if (lng < minLng) minLng = lng;
+          if (lng > maxLng) maxLng = lng;
+          if (lat < minLat) minLat = lat;
+          if (lat > maxLat) maxLat = lat;
+        });
+
+        const center = [sumLng / groupItems.length, sumLat / groupItems.length];
+        const bounds = [[minLng, minLat], [maxLng, maxLat]];
+
+        return {
+          isCluster: true,
+          level: 'district',
+          name: districtName,
+          title: `${districtName} (${groupItems.length} เรื่อง)`,
+          count: groupItems.length,
+          center,
+          bounds,
+          items: groupItems
+        };
+      });
+    }
+
+    // 3. Tier 3: Zoom >= 11.5 (ระดับเขต/ถนน -> หมุดเดี่ยวชัดเจน พร้อมรองรับ spiderfy)
+    const overlapMap = new Map();
+    normalized.forEach((item) => {
+      const key = `${item.coords[0].toFixed(4)}_${item.coords[1].toFixed(4)}`;
+      if (!overlapMap.has(key)) overlapMap.set(key, []);
+      overlapMap.get(key).push(item);
+    });
+
+    return normalized.map((item) => {
+      const key = `${item.coords[0].toFixed(4)}_${item.coords[1].toFixed(4)}`;
+      const group = overlapMap.get(key) || [item];
+      const hasOverlap = group.length > 1;
+
+      return {
+        isCluster: false,
+        level: 'individual',
+        item: item.raw,
+        properties: item.properties,
+        coords: item.coords,
+        province: item.province,
+        region: item.region,
+        hasOverlap,
+        overlapKey: key,
+        overlappingGroup: group
+      };
+    });
+  }
+
   // 1. Zoom < 7.0: ระดับภาค (Regional clusters)
   if (zoom < 7.0) {
     const regionGroups = {};

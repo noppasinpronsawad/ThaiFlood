@@ -18,6 +18,7 @@ import {
   localizeDateTime, 
   getDrawerSourcesHTML 
 } from '../services/i18nService.js';
+import traffyLogoImg from '../assets/images/traffy-fondue-logo.png';
 
 export function createNavbar(options) {
   let { stations = [], dams = [], dohRoads = { type: 'FeatureCollection', features: [] }, onSearchSelect, onLayerToggle, onECMWFDayChange, onGFSDayChange, onNavigateToStatistics } = options;
@@ -365,21 +366,16 @@ export function createNavbar(options) {
             </div>
           </div>
 
-          <!-- 12. Traffy Fondue Road Flood Incidents (Minimalist Road Icon) -->
+          <!-- 12. Traffy Fondue Citizen Reports -->
           <div class="layer-item-wrapper">
             <label class="gmaps-toggle-row" for="toggle-traffy-flood">
               <div class="layer-info">
                 <span class="layer-icon-box">
-                  <svg class="minimal-road-layer-icon" viewBox="0 0 24 24" width="18" height="18" fill="none">
-                    <path d="M6 20L9.5 4H14.5L18 20H6Z" fill="#334155" stroke="#94a3b8" stroke-width="1.2" stroke-linejoin="round"/>
-                    <line x1="12" y1="5" x2="12" y2="8" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"/>
-                    <line x1="12" y1="10.5" x2="12" y2="13.5" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"/>
-                    <line x1="12" y1="16" x2="12" y2="19" stroke="#ffffff" stroke-width="1.6" stroke-linecap="round"/>
-                  </svg>
+                  <img src="${traffyLogoImg}" class="traffy-layer-icon" alt="Traffy Fondue" width="20" height="20" />
                 </span>
                 <div class="layer-text-wrap">
-                  <div class="layer-name">น้ำท่วมขัง Traffy Fondue (กทม.)</div>
-                  <div class="layer-desc">รายงานจุดน้ำท่วมผิวจราจรสด · ล่าสุด: 29 ก.ย. 2026 01:15 น.</div>
+                  <div class="layer-name">รับแจ้งเรื่อง Traffy Fondue (กทม.)</div>
+                  <div class="layer-desc">รับแจ้งเรื่องร้องเรียนจากประชาชน สวทช. / กทม. (ทุกประเภทปัญหา)</div>
                 </div>
               </div>
               <div class="gmaps-switch">
@@ -394,9 +390,9 @@ export function createNavbar(options) {
               </div>
               <div class="legend-row">
                 <span class="legend-color" style="background:#10b981; height:8px; width:8px; border-radius:50%; display:inline-block;"></span>
-                <span><b>สีเขียว:</b> ดำเนินการเสร็จสิ้น / น้ำลดแล้ว</span>
+                <span><b>สีเขียว:</b> ดำเนินการเสร็จสิ้น / แก้ไขแล้ว</span>
               </div>
-              <div class="legend-note">💡 ข้อมูลจากระบบ <b>Traffy Fondue (สวทช. / กทม.)</b> คลิกที่หมุดถนนเพื่อดูภาพถ่ายและรายละเอียด</div>
+              <div class="legend-note">💡 ข้อมูลจากระบบ <b>Traffy Fondue (สวทช. / กทม.)</b> คลิกที่หมุดเพื่อดูภาพถ่ายและรายละเอียด</div>
             </div>
           </div>
 
@@ -1074,13 +1070,7 @@ export function createNavbar(options) {
     {
       id: 'traffy-flood',
       name: 'Traffy Fondue',
-      iconSvg: `<svg viewBox="0 0 48 48" width="36" height="36" fill="none">
-        <rect width="48" height="48" rx="12" fill="#fffbeb"/>
-        <circle cx="24" cy="22" r="12" fill="#f59e0b"/>
-        <path d="M24 34L20 28H28L24 34Z" fill="#f59e0b"/>
-        <path d="M17 21L24 15L31 21" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-        <circle cx="24" cy="23" r="2.5" fill="#ffffff"/>
-      </svg>`
+      iconSvg: `<img src="${traffyLogoImg}" class="mobile-traffy-icon" alt="Traffy Fondue" width="34" height="34" />`
     },
     {
       id: 'wind-field',
@@ -1752,6 +1742,11 @@ export function createNavbar(options) {
 
     const legendTraffy = overlay.querySelector('#legend-traffy-flood');
     if (legendTraffy) {
+      const rows = legendTraffy.querySelectorAll('.legend-row span:last-child');
+      if (rows.length >= 2) {
+        rows[0].innerHTML = `<b>${isEn ? 'Orange:' : 'สีส้ม:'}</b> ${isEn ? 'Pending / In Progress' : 'รอรับเรื่อง / กำลังดำเนินการแก้ไข'}`;
+        rows[1].innerHTML = `<b>${isEn ? 'Green:' : 'สีเขียว:'}</b> ${isEn ? 'Resolved / Completed' : 'ดำเนินการเสร็จสิ้น / แก้ไขแล้ว'}`;
+      }
       const note = legendTraffy.querySelector('.legend-note');
       if (note) note.textContent = t('legend_traffy_note');
     }

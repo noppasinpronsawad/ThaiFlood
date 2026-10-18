@@ -71,10 +71,11 @@ export function createMapViewer(options) {
   controlsStack.appendChild(locateBtn);
 
   // Zoom In / Out Buttons
-  // Zoom Controls (+ / - / 3D)
+  // Zoom Controls (Zoom Level Badge / + / - / 3D)
   const zoomControls = document.createElement('div');
   zoomControls.className = 'gmaps-zoom-controls';
   zoomControls.innerHTML = `
+    <div class="gmaps-zoom-level-badge" id="gmaps-zoom-level-badge" title="ระดับ Zoom ปัจจุบัน (Current Zoom Level)">z --</div>
     <button class="gmaps-zoom-btn" id="gmaps-zoom-in" title="ซูมเข้า">+</button>
     <div class="gmaps-zoom-divider"></div>
     <button class="gmaps-zoom-btn" id="gmaps-zoom-out" title="ซูมออก">−</button>
@@ -776,8 +777,23 @@ export function createMapViewer(options) {
       attributionControl: false
     });
 
+    function updateZoomBadge() {
+      if (!mapInstance) return;
+      const z = mapInstance.getZoom().toFixed(1);
+      const badge = container.querySelector('#gmaps-zoom-level-badge');
+      if (badge) {
+        badge.textContent = `z ${z}`;
+      }
+    }
+
     if (typeof window !== 'undefined') {
+      window.map = mapInstance;
       window._debugMap = mapInstance;
+      window.getZoom = () => {
+        const z = mapInstance ? Number(mapInstance.getZoom().toFixed(2)) : null;
+        console.log(`🔍 [ThaiFlood Zoom Level] Current: ${z}`);
+        return z;
+      };
     }
 
     // Wire up custom Google Maps zoom buttons
@@ -1495,9 +1511,14 @@ export function createMapViewer(options) {
       mapCanvasEl.addEventListener('pointerdown', collapseLegendDesc, { passive: true });
     }
 
-    mapInstance.on('zoom', handleZoomAndMove);
+    mapInstance.on('zoom', () => {
+      handleZoomAndMove();
+      updateZoomBadge();
+    });
     mapInstance.on('zoomend', () => {
       handleZoomAndMove();
+      updateZoomBadge();
+      console.log(`🔍 [ThaiFlood Zoom Level] Current: ${mapInstance.getZoom().toFixed(2)}`);
       if (activeLegendLayers.has('doh-roads')) {
         updateDOHHighwayMarkers();
       }
@@ -2937,9 +2958,10 @@ export function createMapViewer(options) {
 
     // If points are spatially concentrated in one location (< ~500m)
     if (lngSpan < 0.005 && latSpan < 0.005) {
+      const flyZoom = type === 'traffy' ? (cluster.level === 'overall' ? 11.0 : 13.5) : 12.5;
       mapInstance.flyTo({
         center: cluster.center,
-        zoom: 12.5,
+        zoom: flyZoom,
         speed: 1.2
       });
       if (cluster.items && cluster.items.length > 1) {
@@ -2949,7 +2971,10 @@ export function createMapViewer(options) {
       }
     } else {
       // Cluster Expansion Zoom to bounds of the cluster
-      const targetMaxZoom = cluster.level === 'region' ? 8.6 : 11.2;
+      let targetMaxZoom = cluster.level === 'region' ? 8.6 : 11.2;
+      if (type === 'traffy') {
+        targetMaxZoom = cluster.level === 'overall' ? 11.0 : 13.5;
+      }
       mapInstance.fitBounds(cluster.bounds, {
         padding: { top: 90, bottom: 90, left: 90, right: 90 },
         maxZoom: targetMaxZoom,
@@ -3300,14 +3325,15 @@ export function createMapViewer(options) {
       currentStationPopup = null;
     }
 
+    const isEn = getLanguage() === 'en';
     const popupHtml = `
       <div class="traffy-popup-card">
         <div class="traffy-popup-header">
           <div class="traffy-header-title">
             <span class="traffy-badge-icon">🛣️</span>
             <div>
-              <div class="traffy-title">รายงานน้ำท่วม Traffy Fondue</div>
-              <div class="traffy-ticket">รหัสแจ้ง: ${p.ticket_id}</div>
+              <div class="traffy-title">${t('sheet_traffy_title')}</div>
+              <div class="traffy-ticket">${isEn ? 'Ticket ID:' : 'รหัสแจ้ง:'} ${p.ticket_id}</div>
             </div>
           </div>
           <span class="traffy-state-pill ${p.stateClass}">${p.state}</span>
@@ -3315,17 +3341,17 @@ export function createMapViewer(options) {
         <div class="traffy-popup-body">
           <div class="traffy-desc">${p.description}</div>
           <div class="traffy-meta">
-            <div>📍 <b>สถานที่:</b> ${p.address}</div>
-            <div>🕒 <b>เวลาที่แจ้ง:</b> ${p.formattedTime || p.timestamp}</div>
+            <div>📍 <b>${isEn ? 'Location:' : 'สถานที่:'}</b> ${p.address}</div>
+            <div>🕒 <b>${isEn ? 'Reported Time:' : 'เวลาที่แจ้ง:'}</b> ${p.formattedTime || p.timestamp}</div>
           </div>
-          ${p.photo_url ? `<div class="traffy-photo-wrap"><img src="${p.photo_url}" class="traffy-photo" alt="ภาพถ่ายจุดน้ำท่วม" loading="lazy" /></div>` : ''}
+          ${p.photo_url ? `<div class="traffy-photo-wrap"><img src="${p.photo_url}" class="traffy-photo" alt="${isEn ? 'Incident photo' : 'ภาพถ่ายประกอบเรื่องร้องเรียน'}" loading="lazy" /></div>` : ''}
         </div>
         <div class="traffy-popup-footer">
           <a href="${p.traffy_url}" target="_blank" rel="noopener noreferrer" class="btn-traffy-link">
-            ดูบน Traffy Fondue ↗
+            ${isEn ? 'View on Traffy Fondue ↗' : 'ดูบน Traffy Fondue ↗'}
           </a>
           <a href="${p.line_url || 'https://line.me/R/ti/p/@traffyfondue'}" target="_blank" rel="noopener noreferrer" class="btn-traffy-line">
-            แจ้งเหตุเพิ่มเติม 💬
+            ${isEn ? 'Report Issue 💬' : 'แจ้งเหตุเพิ่มเติม 💬'}
           </a>
         </div>
       </div>
@@ -3356,13 +3382,23 @@ export function createMapViewer(options) {
     const isEn = getLanguage() === 'en';
     clusteredOrPins.forEach((entry) => {
       if (entry.isCluster) {
-        const clusterName = entry.level === 'region' ? localizeRegion(entry.name) : localizeProvince(entry.name);
+        let clusterName = '';
+        if (entry.level === 'overall') {
+          clusterName = isEn ? 'Bangkok Overview' : 'กรุงเทพมหานคร';
+        } else if (entry.level === 'district') {
+          const rawDist = entry.name.replace(/^เขต/, '').trim();
+          clusterName = isEn ? `${rawDist} District` : `เขต${rawDist}`;
+        } else if (entry.level === 'region') {
+          clusterName = localizeRegion(entry.name);
+        } else {
+          clusterName = localizeProvince(entry.name);
+        }
         const unitReports = isEn ? 'reports' : 'เรื่อง';
         const el = document.createElement('div');
         el.className = 'traffy-cluster-pin';
         el.setAttribute('data-level', entry.level);
         el.setAttribute('data-name', entry.name);
-        el.title = isEn ? `[Traffy Fondue] ${clusterName} - Click to zoom` : `[Traffy Fondue] ${entry.title || clusterName} - คลิกเพื่อขยายดูพื้นที่`;
+        el.title = isEn ? `[Traffy Fondue] ${clusterName} (${entry.count} ${unitReports}) - Click to zoom` : `[Traffy Fondue] ${clusterName} (${entry.count} ${unitReports}) - คลิกเพื่อขยายดูพื้นที่`;
 
         el.innerHTML = `
           <div class="traffy-cluster-icon-wrap">
@@ -3371,7 +3407,7 @@ export function createMapViewer(options) {
           </div>
           <div class="traffy-cluster-label-tag">
             <span class="traffy-cluster-name">${clusterName}</span>
-            <span class="traffy-cluster-qty">${entry.count} ${unitReports}</span>
+            ${entry.level === 'overall' ? `<span class="traffy-cluster-qty">${entry.count} ${unitReports}</span>` : ''}
           </div>
         `;
 
