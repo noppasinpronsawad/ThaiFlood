@@ -15,6 +15,17 @@ import { createNavbar } from './components/Navbar.js';
 import { createMapViewer } from './components/MapViewer.js';
 import { createWaterStationList } from './components/WaterStationList.js';
 
+// Detect iOS browsers with persistent top address/app bars (e.g. Chrome CriOS, Firefox FxiOS, Edge, LINE, Facebook)
+// to prevent WebKit's redundant safe-area-inset-top from adding excessive top whitespace.
+if (typeof window !== 'undefined' && typeof navigator !== 'undefined') {
+  const ua = navigator.userAgent || '';
+  const isIOS = /iPhone|iPad|iPod/i.test(ua);
+  const isTopBarBrowser = isIOS && /CriOS|FxiOS|EdgiOS|OPiOS|Line\/|FB_IAB|FBAV|Instagram/i.test(ua);
+  if (isTopBarBrowser && document.documentElement) {
+    document.documentElement.classList.add('has-top-app-bar');
+  }
+}
+
 // Prevent iOS Safari / Chrome elastic window scroll dislocation and lock zooming exclusively to Map Canvas
 if (typeof window !== 'undefined') {
   window.addEventListener('scroll', () => {

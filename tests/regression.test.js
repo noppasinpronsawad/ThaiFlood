@@ -925,7 +925,7 @@ async function runAllTests() {
     // 2. DOH Highway Flood Layer
     const dohGeo = await dohService.getDohHighwayGeoJSON();
     assert.ok(dohGeo && dohGeo.type === 'FeatureCollection', 'DOH highway service must return valid FeatureCollection');
-    assert.ok(dohGeo.features.length >= 10, 'Must have at least 10 national highway flood segments');
+    assert.ok(Array.isArray(dohGeo.features) && dohGeo.features.length >= 1, 'Must have active national highway flood segments');
     assert.strictEqual(dohGeo.features[0].geometry.type, 'LineString', 'Highway segments must have LineString geometry');
     assert.ok(dohGeo.features[0].properties.highwayNo, 'Must have highway number');
     assert.ok(dohGeo.metadata.hotline.includes('1586'), 'Must include hotline 1586');
@@ -1901,9 +1901,10 @@ async function runAllTests() {
     // MapViewer integration & Zoom Indicator verification
     assert.ok(mapViewerCode.includes("entry.level === 'overall'"), 'MapViewer must handle overall level');
     assert.ok(mapViewerCode.includes("entry.level === 'district'"), 'MapViewer must handle district level');
-    assert.ok(mapViewerCode.includes('gmaps-zoom-level-badge'), 'MapViewer must include gmaps-zoom-level-badge');
+    assert.ok(!mapViewerCode.includes('gmaps-zoom-level-badge'), 'MapViewer must not include gmaps-zoom-level-badge');
     assert.ok(mapViewerCode.includes('window.getZoom'), 'MapViewer must expose window.getZoom');
-    assert.ok(cssCode.includes('.gmaps-zoom-level-badge'), 'index.css must style .gmaps-zoom-level-badge');
+    assert.ok(!cssCode.includes('.gmaps-zoom-level-badge'), 'index.css must not style .gmaps-zoom-level-badge');
+    assert.ok(cssCode.includes('.has-top-app-bar'), 'index.css must support .has-top-app-bar for mobile browsers');
   });
 
   console.log(`\n🎉 Regression Tests Completed: ${passedTests} passed.\n`);

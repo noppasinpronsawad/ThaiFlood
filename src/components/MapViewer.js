@@ -71,11 +71,10 @@ export function createMapViewer(options) {
   controlsStack.appendChild(locateBtn);
 
   // Zoom In / Out Buttons
-  // Zoom Controls (Zoom Level Badge / + / - / 3D)
+  // Zoom Controls (+ / - / 3D)
   const zoomControls = document.createElement('div');
   zoomControls.className = 'gmaps-zoom-controls';
   zoomControls.innerHTML = `
-    <div class="gmaps-zoom-level-badge" id="gmaps-zoom-level-badge" title="ระดับ Zoom ปัจจุบัน (Current Zoom Level)">z --</div>
     <button class="gmaps-zoom-btn" id="gmaps-zoom-in" title="ซูมเข้า">+</button>
     <div class="gmaps-zoom-divider"></div>
     <button class="gmaps-zoom-btn" id="gmaps-zoom-out" title="ซูมออก">−</button>
@@ -776,15 +775,6 @@ export function createMapViewer(options) {
       minZoom: 1,
       attributionControl: false
     });
-
-    function updateZoomBadge() {
-      if (!mapInstance) return;
-      const z = mapInstance.getZoom().toFixed(1);
-      const badge = container.querySelector('#gmaps-zoom-level-badge');
-      if (badge) {
-        badge.textContent = `z ${z}`;
-      }
-    }
 
     if (typeof window !== 'undefined') {
       window.map = mapInstance;
@@ -1513,11 +1503,9 @@ export function createMapViewer(options) {
 
     mapInstance.on('zoom', () => {
       handleZoomAndMove();
-      updateZoomBadge();
     });
     mapInstance.on('zoomend', () => {
       handleZoomAndMove();
-      updateZoomBadge();
       console.log(`🔍 [ThaiFlood Zoom Level] Current: ${mapInstance.getZoom().toFixed(2)}`);
       if (activeLegendLayers.has('doh-roads')) {
         updateDOHHighwayMarkers();
