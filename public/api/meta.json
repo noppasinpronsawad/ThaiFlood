@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-10-26T09:30:35.289Z",
+  "timestamp": "2026-10-26T09:40:33.194Z",
   "stationsCount": 780,
   "damsCount": 50,
   "dohRoadsCount": 0,
@@ -15,56 +15,56 @@
       "name": "สถานีโทรมาตรวัดระดับน้ำ",
       "agency": "สสน. (HII / ThaiWater)",
       "status": "UP",
-      "lastAttempt": "2026-10-26T09:30:35.289Z",
-      "lastSuccess": "2026-10-26T09:30:35.289Z",
+      "lastAttempt": "2026-10-26T09:40:33.194Z",
+      "lastSuccess": "2026-10-26T09:40:33.194Z",
       "count": 780
     },
     "dams": {
       "name": "ปริมาณน้ำในอ่างเก็บน้ำ/เขื่อน",
       "agency": "กฟผ. / สสน. (EGAT / HII)",
       "status": "UP",
-      "lastAttempt": "2026-10-26T09:30:35.289Z",
-      "lastSuccess": "2026-10-26T09:30:35.289Z",
+      "lastAttempt": "2026-10-26T09:40:33.194Z",
+      "lastSuccess": "2026-10-26T09:40:33.194Z",
       "count": 50
     },
     "dohRoads": {
       "name": "รายงานน้ำท่วมทางหลวง",
       "agency": "กรมทางหลวง (DOH)",
       "status": "UP",
-      "lastAttempt": "2026-10-26T09:30:35.289Z",
-      "lastSuccess": "2026-10-26T09:30:35.289Z",
+      "lastAttempt": "2026-10-26T09:40:33.194Z",
+      "lastSuccess": "2026-10-26T09:40:33.194Z",
       "count": 0
     },
     "cctv": {
       "name": "กล้อง CCTV ทางหลวงและจุดตรวจน้ำ",
       "agency": "กรมทางหลวง / กทม. / กรมชลฯ",
       "status": "UP",
-      "lastAttempt": "2026-10-26T09:30:35.289Z",
-      "lastSuccess": "2026-10-26T09:30:35.289Z",
+      "lastAttempt": "2026-10-26T09:40:33.194Z",
+      "lastSuccess": "2026-10-26T09:40:33.194Z",
       "count": 31
     },
     "openMeteo": {
       "name": "แบบจำลองพยากรณ์ ECMWF & GFS",
       "agency": "Open-Meteo Supercomputer",
       "status": "UP",
-      "lastAttempt": "2026-10-26T09:30:35.289Z",
-      "lastSuccess": "2026-10-26T09:30:35.289Z",
+      "lastAttempt": "2026-10-26T09:40:33.194Z",
+      "lastSuccess": "2026-10-26T09:40:33.194Z",
       "count": 7
     },
     "traffy": {
       "name": "รายงานแจ้งเหตุ Traffy Fondue (ทุกประเภทปัญหา)",
       "agency": "สวทช. / กรุงเทพมหานคร",
       "status": "UP",
-      "lastAttempt": "2026-10-26T09:30:35.289Z",
-      "lastSuccess": "2026-10-26T09:30:35.289Z",
+      "lastAttempt": "2026-10-26T09:40:33.194Z",
+      "lastSuccess": "2026-10-26T09:40:33.194Z",
       "count": 300
     },
     "tmdRadar": {
       "name": "เรดาร์ตรวจฝนตรวจสภาพอากาศ",
       "agency": "กรมอุตุนิยมวิทยา (TMD)",
       "status": "UP",
-      "lastAttempt": "2026-10-26T09:30:35.289Z",
-      "lastSuccess": "2026-10-26T09:30:35.289Z",
+      "lastAttempt": "2026-10-26T09:40:33.194Z",
+      "lastSuccess": "2026-10-26T09:40:33.194Z",
       "count": 13
     }
   }
