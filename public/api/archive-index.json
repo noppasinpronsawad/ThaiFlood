@@ -1,5 +1,11 @@
 [
   {
+    "filename": "telemetry-2026-11-01.json.gz",
+    "date": "2026-11-01",
+    "sizeBytes": 110322,
+    "path": "/archive/telemetry-2026-11-01.json.gz"
+  },
+  {
     "filename": "telemetry-2026-10-31.json.gz",
     "date": "2026-10-31",
     "sizeBytes": 110296,
