@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-11-17T09:00:58.054Z",
+  "timestamp": "2026-11-17T09:10:48.910Z",
   "stationsCount": 804,
   "damsCount": 50,
   "dohRoadsCount": 0,
   "cctvCount": 31,
   "dailyArchive": {
     "filename": "telemetry-2026-11-17.json.gz",
-    "sizeBytes": 108863,
+    "sizeBytes": 108954,
     "path": "/archive/telemetry-2026-11-17.json.gz"
   },
   "status": "success",
@@ -15,39 +15,39 @@
       "name": "สถานีโทรมาตรวัดระดับน้ำ",
       "agency": "สสน. (HII / ThaiWater)",
       "status": "UP",
-      "lastAttempt": "2026-11-17T09:00:58.054Z",
-      "lastSuccess": "2026-11-17T09:00:58.054Z",
+      "lastAttempt": "2026-11-17T09:10:48.910Z",
+      "lastSuccess": "2026-11-17T09:10:48.910Z",
       "count": 804
     },
     "dams": {
       "name": "ปริมาณน้ำในอ่างเก็บน้ำ/เขื่อน",
       "agency": "กฟผ. / สสน. (EGAT / HII)",
       "status": "UP",
-      "lastAttempt": "2026-11-17T09:00:58.054Z",
-      "lastSuccess": "2026-11-17T09:00:58.054Z",
+      "lastAttempt": "2026-11-17T09:10:48.910Z",
+      "lastSuccess": "2026-11-17T09:10:48.910Z",
       "count": 50
     },
     "dohRoads": {
       "name": "รายงานน้ำท่วมทางหลวง",
       "agency": "กรมทางหลวง (DOH)",
       "status": "UP",
-      "lastAttempt": "2026-11-17T09:00:58.054Z",
-      "lastSuccess": "2026-11-17T09:00:58.054Z",
+      "lastAttempt": "2026-11-17T09:10:48.910Z",
+      "lastSuccess": "2026-11-17T09:10:48.910Z",
       "count": 0
     },
     "cctv": {
       "name": "กล้อง CCTV ทางหลวงและจุดตรวจน้ำ",
       "agency": "กรมทางหลวง / กทม. / กรมชลฯ",
       "status": "UP",
-      "lastAttempt": "2026-11-17T09:00:58.054Z",
-      "lastSuccess": "2026-11-17T09:00:58.054Z",
+      "lastAttempt": "2026-11-17T09:10:48.910Z",
+      "lastSuccess": "2026-11-17T09:10:48.910Z",
       "count": 31
     },
     "openMeteo": {
       "name": "แบบจำลองพยากรณ์ ECMWF & GFS",
       "agency": "Open-Meteo Supercomputer",
       "status": "DOWN",
-      "lastAttempt": "2026-11-17T09:00:58.054Z",
+      "lastAttempt": "2026-11-17T09:10:48.910Z",
       "lastSuccess": "2026-11-17T08:50:37.966Z",
       "count": 0
     },
@@ -55,16 +55,16 @@
       "name": "รายงานแจ้งเหตุ Traffy Fondue (ทุกประเภทปัญหา)",
       "agency": "สวทช. / กรุงเทพมหานคร",
       "status": "UP",
-      "lastAttempt": "2026-11-17T09:00:58.054Z",
-      "lastSuccess": "2026-11-17T09:00:58.054Z",
+      "lastAttempt": "2026-11-17T09:10:48.910Z",
+      "lastSuccess": "2026-11-17T09:10:48.910Z",
       "count": 300
     },
     "tmdRadar": {
       "name": "เรดาร์ตรวจฝนตรวจสภาพอากาศ",
       "agency": "กรมอุตุนิยมวิทยา (TMD)",
       "status": "UP",
-      "lastAttempt": "2026-11-17T09:00:58.054Z",
-      "lastSuccess": "2026-11-17T09:00:58.054Z",
+      "lastAttempt": "2026-11-17T09:10:48.910Z",
+      "lastSuccess": "2026-11-17T09:10:48.910Z",
       "count": 13
     }
   }
